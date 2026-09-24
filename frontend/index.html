@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Tutor</title>
+<link rel="stylesheet" href="style.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>AI-Powered Multilingual Tutor</h1>
+    <div class="controls">
+      <label>
+        Level
+        <select id="level">
+          <option value="foundation">Foundation</option>
+          <option value="undergraduate" selected>Undergraduate</option>
+          <option value="postgraduate">Postgraduate</option>
+        </select>
+      </label>
+      <label>
+        Language
+        <select id="language">
+          <option value="en" selected>English</option>
+          <option value="ur">Urdu</option>
+          <option value="ar">Arabic</option>
+          <option value="fa">Persian</option>
+        </select>
+      </label>
+    </div>
+  </header>
+
+  <main id="chat"></main>
+
+  <form id="chat-form">
+    <textarea id="message" rows="2" placeholder="Ask an academic question..."></textarea>
+    <button type="submit">Send</button>
+  </form>
+  <p id="status"></p>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
