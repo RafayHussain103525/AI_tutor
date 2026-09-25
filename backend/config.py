@@ -25,12 +25,13 @@ VOICE_PROVIDER = os.getenv("VOICE_PROVIDER", "groq").lower()
 GROQ_STT_MODEL = os.getenv("GROQ_STT_MODEL", "whisper-large-v3-turbo")
 
 # Text-to-speech, always generated server-side: "edge" (free neural voices) or "elevenlabs"
+# (Allison/George; automatically falls back to the free voices if the ElevenLabs account errors)
 TTS_PROVIDER = os.getenv("TTS_PROVIDER", "edge").lower()
 
 ELEVENLABS_API_KEY =os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "")
-# Default ElevenLabs premade voices: Sarah (female) and George (male)
-ELEVENLABS_VOICE_ID_FEMALE = os.getenv("ELEVENLABS_VOICE_ID_FEMALE", ELEVENLABS_VOICE_ID or "EXAVITQu4vr4xnSDxMaL")
+# Female: "Allison - Energetic, Clear and Bubbly"; male: George (premade)
+ELEVENLABS_VOICE_ID_FEMALE = os.getenv("ELEVENLABS_VOICE_ID_FEMALE", "xctasy8XvGp2cVO9HL9k")
 ELEVENLABS_VOICE_ID_MALE = os.getenv("ELEVENLABS_VOICE_ID_MALE", "JBFqnCBsd6RMkjVDRZzb")
 ELEVENLABS_AGENT_ID = os.getenv("ELEVENLABS_AGENT_ID", "")
 

@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 import httpx
 
@@ -42,17 +43,16 @@ async def text_to_speech(text: str, gender: str = "female", language: str = "en"
     key = (config.TTS_PROVIDER, text, gender, language)
     if key in _tts_cache:
         return _tts_cache[key]
-    audio = await _synthesize(text, gender, language)
-    if len(_tts_cache) >= _TTS_CACHE_MAX:
-        _tts_cache.pop(next(iter(_tts_cache)))
-    _tts_cache[key] = audio
+    audio, from_primary = await _synthesize(text, gender, language)
+    if from_primary:  # don't cache fallback audio, so ElevenLabs takes over as soon as it works
+        if len(_tts_cache) >= _TTS_CACHE_MAX:
+            _tts_cache.pop(next(iter(_tts_cache)))
+        _tts_cache[key] = audio
     return audio
 
 
 async def warm_up():
     """Open a first connection for every voice so the first real reply isn't slow."""
-    if config.TTS_PROVIDER == "elevenlabs":
-        return
     for language in EDGE_VOICES:
         for gender in ("female", "male"):
             try:
@@ -61,17 +61,19 @@ async def warm_up():
                 pass
 
 
-async def _synthesize(text: str, gender: str, language: str) -> bytes:
-    if config.TTS_PROVIDER != "elevenlabs":
-        # The free service sometimes stalls; a quick retry is usually much faster than waiting.
-        for attempt in range(3):
-            try:
-                return await asyncio.wait_for(_edge_tts(text, gender, language), timeout=4 if attempt < 2 else 15)
-            except Exception:
-                if attempt == 2:
-                    raise
+async def _edge_with_retry(text: str, gender: str, language: str) -> bytes:
+    # The free service sometimes stalls; a quick retry is usually much faster than waiting.
+    for attempt in range(3):
+        try:
+            return await asyncio.wait_for(_edge_tts(text, gender, language), timeout=4 if attempt < 2 else 15)
+        except Exception:
+            if attempt == 2:
+                raise
+
+
+async def _elevenlabs_tts(text: str, gender: str) -> bytes:
     voice_id = config.ELEVENLABS_VOICE_ID_MALE if gender == "male" else config.ELEVENLABS_VOICE_ID_FEMALE
-    async with httpx.AsyncClient(timeout=60) as client:
+    async with httpx.AsyncClient(timeout=30) as client:
         res = await client.post(
             f"{BASE}/text-to-speech/{voice_id}",
             headers=_headers(),
@@ -79,6 +81,23 @@ async def _synthesize(text: str, gender: str, language: str) -> bytes:
         )
         res.raise_for_status()
         return res.content
+
+
+_eleven_blocked_until = 0.0
+
+
+async def _synthesize(text: str, gender: str, language: str) -> tuple[bytes, bool]:
+    """Returns (audio, produced_by_configured_provider)."""
+    global _eleven_blocked_until
+    if config.TTS_PROVIDER == "elevenlabs":
+        if time.time() >= _eleven_blocked_until:
+            try:
+                return await _elevenlabs_tts(text, gender), True
+            except Exception:
+                # Account/quota problem: skip ElevenLabs for 10 minutes and use the free voices
+                _eleven_blocked_until = time.time() + 600
+        return await _edge_with_retry(text, gender, language), False
+    return await _edge_with_retry(text, gender, language), True
 
 
 async def speech_to_text(audio: bytes, filename: str, content_type: str, language: str | None) -> str:
