@@ -1,5 +1,4 @@
 const RTL_LANGUAGES = new Set(["ur", "ar", "fa"]);
-const SPEECH_LANGS = { en: "en-US", ur: "ur-PK", ar: "ar-SA", fa: "fa-IR" };
 const MATH_DELIMS = [
   { left: "$$", right: "$$", display: true },
   { left: "$", right: "$", display: false },
@@ -250,21 +249,17 @@ formEl.addEventListener("submit", async (e) => {
 });
 
 // ---------- Voice output (speaking animation) ----------
-
-let ttsProvider = "edge";
-fetch("/api/config")
-  .then((r) => r.json())
-  .then((c) => (ttsProvider = c.tts_provider))
-  .catch(() => {});
+// Audio is generated on the server (neural voices), so it sounds the same in every browser.
 
 let currentAudio = null;
+let speakToken = 0;
 
 function setSpeaking(on) {
   speakingEl.hidden = !on;
 }
 
 function stopSpeaking() {
-  if (window.speechSynthesis) speechSynthesis.cancel();
+  speakToken++;
   if (currentAudio) {
     currentAudio.pause();
     currentAudio = null;
@@ -276,21 +271,6 @@ $("stop-speaking").addEventListener("click", stopSpeaking);
 speakEl.addEventListener("change", () => {
   if (!speakEl.checked) stopSpeaking();
 });
-
-function chunkText(text, max = 180) {
-  const sentences = text.match(/[^.!?؟۔\n]+[.!?؟۔]?/g) || [text];
-  const chunks = [];
-  let cur = "";
-  for (const s of sentences) {
-    if ((cur + s).length > max && cur) {
-      chunks.push(cur.trim());
-      cur = "";
-    }
-    cur += s + " ";
-  }
-  if (cur.trim()) chunks.push(cur.trim());
-  return chunks;
-}
 
 // Voice gender (Female / Male), remembered between visits
 let voiceGender = "female";
@@ -316,63 +296,14 @@ document.querySelectorAll("#voice-gender .seg-btn").forEach((b) =>
 );
 renderGender();
 
-// Browsers don't expose voice gender, so match well-known voice names.
-const FEMALE_VOICES = /zira|hazel|susan|heera|aria|jenny|samantha|female|hedda|salma|hoda|zariyah|uzma|dilara|sarah|karen|moira|tessa|fiona|victoria|google uk english female/i;
-const MALE_VOICES = /david|mark|george|ravi|guy|male|naayf|shakir|hamed|asad|farid|ryan|alvaro|daniel|alex|fred|google uk english male/i;
-
-function pickVoice(lang) {
-  const voices = speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith(lang));
-  if (!voices.length) return { voice: null, matched: false };
-  const pattern = voiceGender === "male" ? MALE_VOICES : FEMALE_VOICES;
-  const other = voiceGender === "male" ? FEMALE_VOICES : MALE_VOICES;
-  const exact = voices.find((v) => pattern.test(v.name) && !(voiceGender === "male" && /female/i.test(v.name)));
-  if (exact) return { voice: exact, matched: true };
-  // No name match: avoid a voice known to be the other gender if possible
-  const neutral = voices.find((v) => !other.test(v.name));
-  return { voice: neutral || voices[0], matched: false };
-}
-
-function speakInBrowser(plain) {
-  if (!window.speechSynthesis) {
-    setStatus("Read aloud is not supported in this browser.");
-    return;
-  }
-  speechSynthesis.cancel();
-  const lang = languageEl.value;
-  const { voice, matched } = pickVoice(lang);
-  if (!voice && lang !== "en") {
-    setStatus("No installed voice for this language; add one in your OS speech settings.");
-  } else if (voice && !matched) {
-    setStatus(`No ${voiceGender} voice installed for this language, using the closest available one.`);
-  }
-  // If no gendered voice exists, shift pitch so male/female still sound different
-  const pitch = matched ? 1 : voiceGender === "male" ? 0.75 : 1.15;
-  const chunks = chunkText(plain);
-  chunks.forEach((chunk, i) => {
-    const utter = new SpeechSynthesisUtterance(chunk);
-    utter.lang = SPEECH_LANGS[lang] || "en-US";
-    if (voice) utter.voice = voice;
-    utter.pitch = pitch;
-    if (i === 0) utter.onstart = () => setSpeaking(true);
-    if (i === chunks.length - 1) {
-      utter.onend = () => setSpeaking(false);
-    }
-    utter.onerror = () => setSpeaking(false);
-    speechSynthesis.speak(utter);
-  });
-}
-
 async function speak(text) {
+  const token = ++speakToken;
   try {
     const plain = text
       .replace(/```[\s\S]*?```/g, " ")
       .replace(/\$\$[\s\S]*?\$\$/g, " ")
       .replace(/\\\[[\s\S]*?\\\]/g, " ")
       .replace(/[*#`$_\\]/g, "");
-    if (ttsProvider === "browser") {
-      speakInBrowser(plain);
-      return;
-    }
     setStatus("Preparing voice…");
     const res = await fetch("/api/tts", {
       method: "POST",
@@ -381,17 +312,16 @@ async function speak(text) {
     });
     if (!res.ok) throw new Error(res.status);
     const blob = await res.blob();
+    if (token !== speakToken) return; // cancelled or superseded while generating
     setStatus("");
-    stopSpeaking();
+    if (currentAudio) currentAudio.pause();
     currentAudio = new Audio(URL.createObjectURL(blob));
     currentAudio.onplay = () => setSpeaking(true);
     currentAudio.onended = currentAudio.onpause = () => setSpeaking(false);
     await currentAudio.play();
   } catch (err) {
-    // Natural voice unavailable (offline / service error): fall back to the browser voice
     setSpeaking(false);
-    setStatus("");
-    speakInBrowser(text.replace(/[*#`$_\\]/g, ""));
+    setStatus("Voice is unavailable right now (" + err.message + "). The written answer is above.");
   }
 }
 

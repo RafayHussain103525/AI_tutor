@@ -33,7 +33,7 @@ async def _edge_tts(text: str, gender: str, language: str) -> bytes:
 
 
 async def text_to_speech(text: str, gender: str = "female", language: str = "en") -> bytes:
-    if config.TTS_PROVIDER == "edge":
+    if config.TTS_PROVIDER != "elevenlabs":
         return await _edge_tts(text, gender, language)
     voice_id = config.ELEVENLABS_VOICE_ID_MALE if gender == "male" else config.ELEVENLABS_VOICE_ID_FEMALE
     async with httpx.AsyncClient(timeout=60) as client:
