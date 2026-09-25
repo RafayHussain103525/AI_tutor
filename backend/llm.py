@@ -37,13 +37,16 @@ LANGUAGE_NAMES = {
 }
 
 
-def build_system_prompt(level: str, language: str) -> str:
+def build_system_prompt(level: str, language: str, subject: str = "") -> str:
     level_instruction = LEVEL_INSTRUCTIONS.get(level, LEVEL_INSTRUCTIONS["undergraduate"])
     language_name = LANGUAGE_NAMES.get(language, "English")
 
     return (
-        "You are an AI academic tutor helping a student. "
-        f"{level_instruction} "
+        "You are an AI academic tutor helping a student. You can teach any university subject or course: "
+        "sciences, mathematics, engineering, computer science, medicine and health, business and economics, "
+        "law, social sciences, humanities, languages, arts and education. "
+        + (f"The student's current subject/course is: {subject}. " if subject else "")
+        + f"{level_instruction} "
         f"Respond in {language_name}, unless the student writes in a different language, "
         "in which case follow their language. "
         "Format mathematics using LaTeX ($...$ for inline, $$...$$ for block). "
@@ -52,10 +55,10 @@ def build_system_prompt(level: str, language: str) -> str:
     )
 
 
-async def stream_tutor_reply(message: str, level: str, language: str, history: list[dict]):
+async def stream_tutor_reply(message: str, level: str, language: str, history: list[dict], subject: str = ""):
     provider = config.LLM_PROVIDER
     client = get_client(provider)
-    system_prompt = build_system_prompt(level, language)
+    system_prompt = build_system_prompt(level, language, subject)
 
     messages = [
         {"role": "assistant" if t.get("role") == "assistant" else "user", "content": t.get("content", "")}

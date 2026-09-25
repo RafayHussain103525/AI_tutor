@@ -27,6 +27,7 @@ class ChatRequest(BaseModel):
     user_id: str
     message: str
     level: str = "undergraduate"
+    subject: str = ""
     language: str = "en"
     history: list[ChatTurn] = []
 
@@ -56,7 +57,7 @@ async def chat(req: ChatRequest):
 
     async def event_stream():
         try:
-            async for piece in stream_tutor_reply(req.message, req.level, req.language, history):
+            async for piece in stream_tutor_reply(req.message, req.level, req.language, history, req.subject.strip()[:100]):
                 yield piece
         except Exception as exc:
             yield f"\n\n[Error generating response: {exc}]"

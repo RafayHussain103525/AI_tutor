@@ -65,7 +65,14 @@ formEl.addEventListener("submit", async (e) => {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user_id: userId, message, level, language, history }),
+      body: JSON.stringify({
+        user_id: userId,
+        message,
+        level,
+        language,
+        subject: document.getElementById("subject").value,
+        history,
+      }),
     });
 
     if (!res.ok) {
