@@ -1,6 +1,6 @@
 # AI-Powered Multilingual Tutor — Pilot
 
-Day 1–2 scaffold: FastAPI backend + Gemini streaming chat, static frontend with
+Day 1–2 scaffold: FastAPI backend + Claude (Haiku) streaming chat, static frontend with
 level/language selection, LaTeX/Markdown rendering, and RTL support for Urdu/Arabic/Persian.
 
 ## Setup
@@ -12,7 +12,7 @@ pip install -r requirements.txt
 copy .env.example .env
 ```
 
-Edit `.env` and set `GEMINI_API_KEY` (and ElevenLabs keys once voice work starts).
+Edit `.env` and set `ANTHROPIC_API_KEY` (and ElevenLabs keys once voice work starts).
 
 ## Run
 
@@ -25,7 +25,7 @@ Open http://localhost:8000
 ## Status vs. 14-day plan
 
 - [x] Day 1 — environment/config scaffold
-- [x] Day 2–4 (partial) — Gemini text tutor, streaming, level/language prompts, math/code formatting
+- [x] Day 2–4 (partial) — Claude text tutor, streaming, level/language prompts, math/code formatting
 - [ ] Day 5–6 — STT/TTS (ElevenLabs)
 - [ ] Day 7 — Multilingual/RTL validation pass
 - [ ] Day 8–9 — Live voice agent
@@ -36,4 +36,4 @@ Open http://localhost:8000
 ## Notes
 
 - `backend/usage.py` uses an in-memory counter — fine for local dev, replace with Redis/DB before the pilot goes live on a real server (process restarts reset counts).
-- Model name `gemini-3.8` in `.env.example` is a placeholder — confirm the exact Gemini model ID available to your API key before running.
+- The Claude model is fixed server-side to Haiku 4.5 with a 600-token reply cap (pilot cost restriction). See `ALLOWED_CLAUDE_MODELS` in `backend/config.py` to widen it later.

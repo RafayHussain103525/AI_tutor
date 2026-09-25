@@ -1,5 +1,4 @@
-from google import genai
-from google.genai import types
+from anthropic import AsyncAnthropic
 
 from . import config
 
@@ -9,9 +8,9 @@ _client = None
 def get_client():
     global _client
     if _client is None:
-        if not config.GEMINI_API_KEY:
-            raise RuntimeError("GEMINI_API_KEY is not set. Add it to your .env file.")
-        _client = genai.Client(api_key=config.GEMINI_API_KEY)
+        if not config.ANTHROPIC_API_KEY:
+            raise RuntimeError("ANTHROPIC_API_KEY is not set. Add it to your .env file.")
+        _client = AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
     return _client
 
 
@@ -48,21 +47,18 @@ async def stream_tutor_reply(message: str, level: str, language: str, history: l
     client = get_client()
     system_prompt = build_system_prompt(level, language)
 
-    contents = []
-    for turn in history:
-        role = "model" if turn.get("role") == "assistant" else "user"
-        contents.append(types.Content(role=role, parts=[types.Part(text=turn.get("content", ""))]))
-    contents.append(types.Content(role="user", parts=[types.Part(text=message)]))
+    messages = [
+        {"role": "assistant" if t.get("role") == "assistant" else "user", "content": t.get("content", "")}
+        for t in history
+        if t.get("content")
+    ]
+    messages.append({"role": "user", "content": message})
 
-    stream = await client.aio.models.generate_content_stream(
-        model=config.GEMINI_MODEL,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            max_output_tokens=config.MAX_TOKENS_PER_RESPONSE,
-        ),
-    )
-
-    async for chunk in stream:
-        if chunk.text:
-            yield chunk.text
+    async with client.messages.stream(
+        model=config.CLAUDE_MODEL,
+        max_tokens=config.MAX_TOKENS_PER_RESPONSE,
+        system=system_prompt,
+        messages=messages,
+    ) as stream:
+        async for text in stream.text_stream:
+            yield text
