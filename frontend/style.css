@@ -158,6 +158,15 @@ input::placeholder, textarea::placeholder { color: #66718c; }
 .body table { border-collapse: collapse; }
 .body th, .body td { border: 1px solid var(--border); padding: 6px 10px; }
 
+.continue-btn {
+  display: inline-flex; align-items: center; margin-top: 14px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 99px;
+  padding: 8px 16px; font-size: .85rem; font-weight: 600; color: var(--text);
+  transition: background .15s, border-color .15s, transform .1s;
+}
+.continue-btn:hover { background: var(--panel-2); border-color: var(--accent); }
+.continue-btn:active { transform: scale(.97); }
+
 /* Typing dots */
 .typing { display: inline-flex; gap: 5px; padding: 10px 0; }
 .typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: bounce 1.2s infinite ease-in-out; }

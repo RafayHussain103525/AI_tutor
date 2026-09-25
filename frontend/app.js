@@ -145,6 +145,23 @@ $("backdrop").addEventListener("click", closeMenu);
 
 let sentByVoice = false;
 
+// The server appends this when the model hit its length limit mid-answer.
+const TRUNC_MARK = "[[LUMA_TRUNCATED]]";
+
+function addContinueButton(body) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "continue-btn";
+  btn.textContent = "Continue generating";
+  btn.addEventListener("click", () => {
+    btn.remove();
+    messageEl.value = "Continue exactly where you stopped.";
+    updateSend();
+    formEl.requestSubmit();
+  });
+  body.appendChild(btn);
+}
+
 // Guess the language from the script of the student's message (null = can't tell / Latin).
 function detectLanguage(text) {
   const arabicScript = (text.match(/[؀-ۿ]/g) || []).length;
@@ -230,7 +247,7 @@ formEl.addEventListener("submit", async (e) => {
       const { done, value } = await reader.read();
       if (done) break;
       fullText += decoder.decode(value, { stream: true });
-      const { text: shown } = splitSpoken(fullText);
+      const { text: shown } = splitSpoken(fullText.replace(TRUNC_MARK, ""));
       if (shown) renderInto(assistantBody, shown);
       scrollToBottom();
       // Start talking as soon as the short spoken part is complete, while the
@@ -243,10 +260,12 @@ formEl.addEventListener("submit", async (e) => {
         }
       }
     }
-    const { spoken, text: finalText } = splitSpoken(fullText);
+    const truncated = fullText.includes(TRUNC_MARK);
+    const { spoken, text: finalText } = splitSpoken(fullText.replace(TRUNC_MARK, ""));
     const shownText = finalText || spoken;
     renderInto(assistantBody, shownText);
     history.push({ role: "assistant", content: shownText });
+    if (truncated) addContinueButton(assistantBody);
     if (voiceMode && !speechStarted && shownText) speak(spoken || firstSentences(shownText));
   } catch (err) {
     assistantBody.textContent = "Network error: " + err.message;

@@ -63,9 +63,15 @@ def build_system_prompt(level: str, language: str, subject: str = "", voice_mode
         f"Only if the language is unclear, use {language_name}. "
         "Format mathematics using LaTeX ($...$ for inline, $$...$$ for block). "
         "Format programming code using fenced Markdown code blocks with a language tag. "
-        "Keep answers focused and academically accurate."
+        "Keep answers focused, complete and academically accurate. Be concise: avoid long preambles. "
+        "When asked for code, give complete, working code without omitting parts, keeping comments brief. "
+        "If the answer is continued from an earlier message, resume exactly where it stopped without repeating."
         + (VOICE_INSTRUCTIONS if voice_mode else "")
     )
+
+
+# Appended when the model hit the length cap, so the UI can offer a "Continue" button.
+TRUNCATED_MARK = "[[LUMA_TRUNCATED]]"
 
 
 async def stream_tutor_reply(message: str, level: str, language: str, history: list[dict], subject: str = "", voice_mode: bool = False):
@@ -89,13 +95,23 @@ async def stream_tutor_reply(message: str, level: str, language: str, history: l
         ) as stream:
             async for text in stream.text_stream:
                 yield text
+            final = await stream.get_final_message()
+            if final.stop_reason == "max_tokens":
+                yield TRUNCATED_MARK
     else:
+        extra = {"reasoning_effort": "low"} if "gpt-oss" in config.GROQ_MODEL else {}
         stream = await client.chat.completions.create(
             model=config.GROQ_MODEL,
             max_tokens=config.MAX_TOKENS_PER_RESPONSE,
             messages=[{"role": "system", "content": system_prompt}] + messages,
             stream=True,
+            extra_body=extra,
         )
         async for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+            if not chunk.choices:
+                continue
+            choice = chunk.choices[0]
+            if choice.delta.content:
+                yield choice.delta.content
+            if choice.finish_reason == "length":
+                yield TRUNCATED_MARK
