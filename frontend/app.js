@@ -112,9 +112,38 @@ const speakEl = document.getElementById("speak");
 const micEl = document.getElementById("mic");
 let recorder = null;
 
+let voiceProvider = "groq";
+fetch("/api/config").then((r) => r.json()).then((c) => (voiceProvider = c.voice_provider)).catch(() => {});
+
+const SPEECH_LANGS = { en: "en-US", ur: "ur-PK", ar: "ar-SA", fa: "fa-IR" };
+
+function speakInBrowser(plain) {
+  if (!window.speechSynthesis) {
+    statusEl.textContent = "Read aloud is not supported in this browser.";
+    return;
+  }
+  speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(plain);
+  utter.lang = SPEECH_LANGS[languageEl.value] || "en-US";
+  const voice = speechSynthesis.getVoices().find((v) => v.lang.toLowerCase().startsWith(languageEl.value));
+  if (voice) utter.voice = voice;
+  else if (languageEl.value !== "en") {
+    statusEl.textContent = "No installed voice for this language; add one in your OS speech settings.";
+  }
+  speechSynthesis.speak(utter);
+}
+
+speakEl.addEventListener("change", () => {
+  if (!speakEl.checked && window.speechSynthesis) speechSynthesis.cancel();
+});
+
 async function speak(text) {
   try {
-    const plain = text.replace(/```[\s\S]*?```/g, " ").replace(/[*#`$]/g, "");
+    const plain = text.replace(/```[\s\S]*?```/g, " ").replace(/\$\$[\s\S]*?\$\$/g, " ").replace(/[*#`$_]/g, "");
+    if (voiceProvider !== "elevenlabs") {
+      speakInBrowser(plain);
+      return;
+    }
     const res = await fetch("/api/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

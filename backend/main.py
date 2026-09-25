@@ -39,6 +39,7 @@ def get_public_config():
         "rtl_languages": list(config.RTL_LANGUAGES),
         "levels": config.ACADEMIC_LEVELS,
         "max_messages_per_day": config.MAX_MESSAGES_PER_USER_PER_DAY,
+        "voice_provider": config.VOICE_PROVIDER,
     }
 
 

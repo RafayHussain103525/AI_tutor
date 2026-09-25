@@ -20,7 +20,11 @@ CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", DEFAULT_CLAUDE_MODEL)
 if CLAUDE_MODEL not in ALLOWED_CLAUDE_MODELS:
     CLAUDE_MODEL = DEFAULT_CLAUDE_MODEL
 
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+# "groq" (free: Whisper STT, browser TTS) or "elevenlabs" (needs a working paid account)
+VOICE_PROVIDER = os.getenv("VOICE_PROVIDER", "groq").lower()
+GROQ_STT_MODEL = os.getenv("GROQ_STT_MODEL", "whisper-large-v3-turbo")
+
+ELEVENLABS_API_KEY =os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "")
 ELEVENLABS_AGENT_ID = os.getenv("ELEVENLABS_AGENT_ID", "")
 

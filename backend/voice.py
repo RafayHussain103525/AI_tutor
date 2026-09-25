@@ -23,6 +23,22 @@ async def text_to_speech(text: str) -> bytes:
 
 
 async def speech_to_text(audio: bytes, filename: str, content_type: str, language: str | None) -> str:
+    if config.VOICE_PROVIDER == "groq":
+        if not config.GROQ_API_KEY:
+            raise RuntimeError("GROQ_API_KEY is not set. Add it to your .env file.")
+        data = {"model": config.GROQ_STT_MODEL}
+        if language:
+            data["language"] = language
+        async with httpx.AsyncClient(timeout=120) as client:
+            res = await client.post(
+                f"{config.GROQ_BASE_URL}/audio/transcriptions",
+                headers={"Authorization": f"Bearer {config.GROQ_API_KEY}"},
+                data=data,
+                files={"file": (filename, audio, content_type)},
+            )
+            res.raise_for_status()
+            return res.json().get("text", "")
+
     data = {"model_id": "scribe_v1"}
     if language:
         data["language_code"] = language

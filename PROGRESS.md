@@ -8,7 +8,7 @@ Tracks the 14-day compressed plan against what's actually done. Updated after ev
 |---|---|---|---|
 | 1 | Env setup, API credentials, config, repo | Done | Repo, `.env.example`, config module, Python 3.12 + `.venv` installed |
 | 2–4 | AI Tutor integration (Claude), prompt config, streaming, level/language selection, math/code formatting | Working (free demo via Groq) | Provider switch `LLM_PROVIDER=groq|claude`. Groq `openai/gpt-oss-120b` tested OK in English, Arabic, Persian, Urdu. Claude path built (Haiku 4.5 only, 600-token cap) but Anthropic account has no credits yet — flip `LLM_PROVIDER=claude` after buying credits |
-| 5–6 | STT/TTS integration (ElevenLabs Scribe + TTS) | Built, blocked on account | `/api/tts`, `/api/stt`, mic + read-aloud UI added. ElevenLabs returns `401 detected_unusual_activity` (Free Tier disabled; needs paid plan) |
+| 5–6 | STT/TTS integration (ElevenLabs Scribe + TTS) | Working (free path) | `VOICE_PROVIDER=groq`: mic -> Groq Whisper STT (verified in English via API); read-aloud uses browser speech synthesis (needs an installed OS voice for ur/ar/fa; not browser-tested). ElevenLabs path (`VOICE_PROVIDER=elevenlabs`) is built but the account returns `401 detected_unusual_activity` (needs paid plan) |
 | 7 | Multilingual + RTL validation (Urdu, Arabic, Persian) | Not started | RTL CSS/JS toggle scaffolded; needs real testing once chat works |
 | 8–9 | Live AI voice agent (ElevenLabs Agent) | Not started | Needs `ELEVENLABS_AGENT_ID` |
 | 10 | Institutional branding + UI/UX pass | Not started | |
