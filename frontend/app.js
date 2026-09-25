@@ -21,18 +21,8 @@ const micEl = $("mic");
 const speakEl = $("speak");
 const speakingEl = $("speaking");
 
-const userId = getOrCreateUserId();
-let history = [];
+let currentConvId = null; // null = a new chat that hasn't been saved yet
 let busy = false;
-
-function getOrCreateUserId() {
-  let id = localStorage.getItem("tutor_user_id");
-  if (!id) {
-    id = "pilot-" + Math.random().toString(36).slice(2, 10);
-    localStorage.setItem("tutor_user_id", id);
-  }
-  return id;
-}
 
 // ---------- Rendering ----------
 
@@ -122,17 +112,22 @@ document.querySelectorAll(".chip").forEach((chip) =>
 
 $("new-chat").addEventListener("click", () => {
   if (busy) return;
+  startNewChat();
+  closeMenu();
+});
+
+function startNewChat() {
   stopSpeaking();
-  history = [];
+  currentConvId = null;
   chatEl.querySelectorAll(".msg").forEach((n) => n.remove());
   emptyEl.hidden = false;
   messageEl.value = "";
   autoGrow();
   updateSend();
   setStatus("");
-  closeMenu();
+  markActiveChat();
   messageEl.focus();
-});
+}
 
 // Mobile sidebar
 function closeMenu() {
@@ -208,7 +203,6 @@ formEl.addEventListener("submit", async (e) => {
 
   stopSpeaking();
   addMessage("user", message, language);
-  history.push({ role: "user", content: message });
   messageEl.value = "";
   autoGrow();
   busy = true;
@@ -224,22 +218,27 @@ formEl.addEventListener("submit", async (e) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        user_id: userId,
         message,
+        conversation_id: currentConvId,
         level,
         language,
         subject: subjectEl.value,
         voice_mode: voiceMode,
-        history: history.slice(0, -1),
       }),
     });
 
+    if (res.status === 401) {
+      assistantBody.closest(".msg").remove();
+      showLogin("Your session expired. Please sign in again.");
+      return;
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       assistantBody.textContent = err.detail || `Error: ${res.status}`;
-      history.pop();
       return;
     }
+    const convId = res.headers.get("X-Conversation-Id");
+    if (convId) currentConvId = convId;
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -264,16 +263,15 @@ formEl.addEventListener("submit", async (e) => {
     const { spoken, text: finalText } = splitSpoken(fullText.replace(TRUNC_MARK, ""));
     const shownText = finalText || spoken;
     renderInto(assistantBody, shownText);
-    history.push({ role: "assistant", content: shownText });
     if (truncated) addContinueButton(assistantBody);
     if (voiceMode && !speechStarted && shownText) speak(spoken || firstSentences(shownText));
   } catch (err) {
     assistantBody.textContent = "Network error: " + err.message;
-    history.pop();
   } finally {
     busy = false;
     updateSend();
     messageEl.focus();
+    if (currentConvId) loadHistory();
   }
 });
 
@@ -503,5 +501,237 @@ micEl.addEventListener("click", async () => {
   }
 });
 
+// ---------- Accounts & chat history ----------
+
+const loginEl = $("login");
+const loginErrorEl = $("login-error");
+const historyEl = $("history");
+let appConfig = {};
+
+function showLogin(message = "") {
+  stopSpeaking();
+  appEl.hidden = true;
+  loginEl.hidden = false;
+  loginErrorEl.textContent = message;
+  renderLoginButton();
+}
+
+function showApp(user) {
+  loginEl.hidden = true;
+  appEl.hidden = false;
+  const label = user.name || user.email;
+  $("user-name").textContent = label;
+  $("user-email").textContent = user.email;
+  const pic = $("user-pic");
+  const initial = $("user-initial");
+  if (user.picture) {
+    pic.referrerPolicy = "no-referrer";
+    pic.src = user.picture;
+    pic.hidden = false;
+    initial.hidden = true;
+  } else {
+    pic.hidden = true;
+    initial.hidden = false;
+    initial.textContent = label[0].toUpperCase();
+  }
+  startNewChat();
+  loadHistory();
+}
+
+function renderLoginButton() {
+  const domain = appConfig.allowed_email_domain || "tuf.edu.pk";
+  $("login-domain").textContent = "@" + domain;
+  $("dev-login").hidden = !appConfig.dev_login;
+  const holder = $("g-btn");
+  holder.innerHTML = "";
+  if (!appConfig.google_client_id) {
+    if (!appConfig.dev_login) loginErrorEl.textContent = "Sign-in is not configured yet. Please contact the administrator.";
+    return;
+  }
+  let tries = 0;
+  const draw = () => {
+    if (!window.google || !google.accounts) {
+      if (++tries < 50) return setTimeout(draw, 200);
+      loginErrorEl.textContent = "Could not load Google sign-in. Check your internet connection and refresh.";
+      return;
+    }
+    google.accounts.id.initialize({ client_id: appConfig.google_client_id, callback: onGoogleCredential });
+    google.accounts.id.renderButton(holder, { theme: "filled_black", size: "large", shape: "pill", text: "signin_with", width: 280 });
+  };
+  draw();
+}
+
+async function onGoogleCredential(resp) {
+  loginErrorEl.textContent = "";
+  try {
+    const res = await fetch("/api/auth/google", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ credential: resp.credential }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      loginErrorEl.textContent = data.detail || "Sign-in failed.";
+      return;
+    }
+    showApp(data);
+  } catch (err) {
+    loginErrorEl.textContent = "Network error: " + err.message;
+  }
+}
+
+$("dev-login").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  loginErrorEl.textContent = "";
+  const res = await fetch("/api/auth/dev", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: $("dev-email").value }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    loginErrorEl.textContent = data.detail || "Sign-in failed.";
+    return;
+  }
+  showApp(data);
+});
+
+$("logout").addEventListener("click", async () => {
+  await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+  if (window.google && google.accounts) google.accounts.id.disableAutoSelect();
+  historyEl.innerHTML = "";
+  showLogin();
+});
+
+// ----- Chat list -----
+
+const TRASH_SVG =
+  '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>';
+const PENCIL_SVG =
+  '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+
+function groupLabel(ts) {
+  const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const days = Math.round((startOfDay(new Date()) - startOfDay(new Date(ts * 1000))) / 86400000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return "Previous 7 days";
+  if (days < 30) return "Previous 30 days";
+  return "Older";
+}
+
+async function loadHistory() {
+  let list;
+  try {
+    const res = await fetch("/api/conversations");
+    if (res.status === 401) return showLogin("Your session expired. Please sign in again.");
+    if (!res.ok) return;
+    list = await res.json();
+  } catch (_) {
+    return;
+  }
+  historyEl.innerHTML = "";
+  if (!list.length) {
+    historyEl.innerHTML = '<div class="history-empty">Your chats will appear here.</div>';
+    return;
+  }
+  let lastGroup = "";
+  for (const c of list) {
+    const group = groupLabel(c.updated);
+    if (group !== lastGroup) {
+      const label = document.createElement("div");
+      label.className = "history-label";
+      label.textContent = group;
+      historyEl.appendChild(label);
+      lastGroup = group;
+    }
+    const item = document.createElement("div");
+    item.className = "chat-item";
+    item.dataset.id = c.id;
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "chat-title";
+    open.textContent = c.title;
+    open.title = c.title;
+    open.dir = "auto";
+    open.addEventListener("click", () => openConversation(c.id));
+    const rename = document.createElement("button");
+    rename.type = "button";
+    rename.className = "chat-act";
+    rename.title = "Rename";
+    rename.setAttribute("aria-label", "Rename chat");
+    rename.innerHTML = PENCIL_SVG;
+    rename.addEventListener("click", () => renameConversation(c.id, c.title));
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "chat-act danger";
+    del.title = "Delete";
+    del.setAttribute("aria-label", "Delete chat");
+    del.innerHTML = TRASH_SVG;
+    del.addEventListener("click", () => deleteConversation(c.id));
+    item.append(open, rename, del);
+    historyEl.appendChild(item);
+  }
+  markActiveChat();
+}
+
+function markActiveChat() {
+  historyEl.querySelectorAll(".chat-item").forEach((el) => el.classList.toggle("active", el.dataset.id === currentConvId));
+}
+
+async function openConversation(id) {
+  if (busy || id === currentConvId) {
+    closeMenu();
+    return;
+  }
+  const res = await fetch("/api/conversations/" + id);
+  if (res.status === 401) return showLogin("Your session expired. Please sign in again.");
+  if (!res.ok) {
+    setStatus("Could not open that chat.");
+    return;
+  }
+  const conv = await res.json();
+  startNewChat();
+  currentConvId = conv.id;
+  for (const m of conv.messages) {
+    const lang = detectLanguage(m.content) || languageEl.value;
+    addMessage(m.role, m.content, RTL_LANGUAGES.has(lang) ? lang : "en");
+  }
+  markActiveChat();
+  closeMenu();
+  scrollToBottom();
+}
+
+async function renameConversation(id, current) {
+  const title = prompt("Rename chat", current);
+  if (!title || !title.trim() || title.trim() === current) return;
+  await fetch("/api/conversations/" + id, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: title.trim() }),
+  });
+  loadHistory();
+}
+
+async function deleteConversation(id) {
+  if (!confirm("Delete this chat? This cannot be undone.")) return;
+  await fetch("/api/conversations/" + id, { method: "DELETE" });
+  if (id === currentConvId) startNewChat();
+  loadHistory();
+}
+
+// ----- Start -----
+
 applyLanguageDirection();
 updateSend();
+
+(async function boot() {
+  try {
+    appConfig = await (await fetch("/api/config")).json();
+  } catch (_) {}
+  try {
+    const res = await fetch("/api/auth/me");
+    if (res.ok) return showApp(await res.json());
+  } catch (_) {}
+  showLogin();
+})();

@@ -37,3 +37,14 @@ Open http://localhost:8000
 
 - `backend/usage.py` uses an in-memory counter — fine for local dev, replace with Redis/DB before the pilot goes live on a real server (process restarts reset counts).
 - The Claude model is fixed server-side to Haiku 4.5 with a 600-token reply cap (pilot cost restriction). See `ALLOWED_CLAUDE_MODELS` in `backend/config.py` to widen it later.
+
+## Sign-in and chat history
+
+Users sign in with Google; only verified `@tuf.edu.pk` accounts are accepted (checked on the server, not just in the page). Each user's chats are stored in `data/luma.db` (SQLite, gitignored) and shown in the sidebar.
+
+**One-time Google setup** (needs a Google Cloud project owned by the university Workspace):
+1. https://console.cloud.google.com/apis/credentials -> Create credentials -> OAuth client ID -> Web application.
+2. Authorized JavaScript origins: `http://localhost:8000` (and your real https URL when deployed).
+3. OAuth consent screen: user type **Internal** (limits sign-in to your Workspace).
+4. Put the client ID in `.env` as `GOOGLE_CLIENT_ID=...apps.googleusercontent.com`.
+5. Set `DEV_LOGIN=0` (the dev login box skips Google and is for local testing only).

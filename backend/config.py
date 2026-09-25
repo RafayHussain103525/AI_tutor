@@ -3,6 +3,36 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# ---------- Accounts & storage ----------
+# Google OAuth client ID (Google Cloud Console -> APIs & Services -> Credentials -> OAuth client ID, "Web application")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+# Only accounts on this Google Workspace domain may sign in
+ALLOWED_EMAIL_DOMAIN = os.getenv("ALLOWED_EMAIL_DOMAIN", "tuf.edu.pk").strip().lower()
+# Local testing only: lets you sign in by typing a domain email, WITHOUT Google. Never enable on a real server.
+DEV_LOGIN = os.getenv("DEV_LOGIN", "0") == "1"
+SESSION_DAYS = int(os.getenv("SESSION_DAYS", "30"))
+DB_PATH = os.getenv("DB_PATH", os.path.join("data", "luma.db"))
+
+
+def _load_secret() -> str:
+    """Session-signing key: from SECRET_KEY, or generated once and kept in data/secret.key."""
+    key = os.getenv("SECRET_KEY", "").strip()
+    if key:
+        return key
+    path = os.path.join(os.path.dirname(DB_PATH) or ".", "secret.key")
+    if os.path.exists(path):
+        return open(path, encoding="utf-8").read().strip()
+    import secrets
+
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    key = secrets.token_hex(32)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(key)
+    return key
+
+
+SECRET_KEY = _load_secret()
+
 # "groq" (free tier, for demo) or "claude" (once credits are bought)
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").lower()
 

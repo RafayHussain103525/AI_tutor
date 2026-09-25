@@ -7,3 +7,6 @@ httpx
 python-multipart
 openai
 edge-tts
+google-auth
+requests
+itsdangerous
