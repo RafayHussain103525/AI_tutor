@@ -85,9 +85,63 @@ formEl.addEventListener("submit", async (e) => {
       chatEl.scrollTop = chatEl.scrollHeight;
     }
     history.push({ role: "assistant", content: fullText });
+    if (speakEl.checked) speak(fullText);
   } catch (err) {
     assistantBubble.textContent = "Network error: " + err.message;
   } finally {
     statusEl.textContent = "";
+  }
+});
+
+const speakEl = document.getElementById("speak");
+const micEl = document.getElementById("mic");
+let recorder = null;
+
+async function speak(text) {
+  try {
+    const plain = text.replace(/```[\s\S]*?```/g, " ").replace(/[*#`$]/g, "");
+    const res = await fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: plain }),
+    });
+    if (!res.ok) throw new Error(res.status);
+    new Audio(URL.createObjectURL(await res.blob())).play();
+  } catch (err) {
+    statusEl.textContent = "Voice playback failed: " + err.message;
+  }
+}
+
+micEl.addEventListener("click", async () => {
+  if (recorder) {
+    recorder.stop();
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const chunks = [];
+    recorder = new MediaRecorder(stream);
+    recorder.ondataavailable = (e) => chunks.push(e.data);
+    recorder.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      recorder = null;
+      micEl.textContent = "\u{1F3A4}";
+      statusEl.textContent = "Transcribing...";
+      const fd = new FormData();
+      fd.append("file", new Blob(chunks, { type: "audio/webm" }), "audio.webm");
+      fd.append("language", languageEl.value);
+      try {
+        const res = await fetch("/api/stt", { method: "POST", body: fd });
+        if (!res.ok) throw new Error(res.status);
+        messageEl.value = (await res.json()).text;
+        statusEl.textContent = "";
+      } catch (err) {
+        statusEl.textContent = "Transcription failed: " + err.message;
+      }
+    };
+    recorder.start();
+    micEl.textContent = "\u23F9";
+  } catch (err) {
+    statusEl.textContent = "Microphone unavailable: " + err.message;
   }
 });

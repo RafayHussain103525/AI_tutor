@@ -1,10 +1,11 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import config, usage
+from . import voice
 from .llm import stream_tutor_reply
 
 app = FastAPI(title="AI-Powered Multilingual Tutor")
@@ -61,6 +62,30 @@ async def chat(req: ChatRequest):
             yield f"\n\n[Error generating response: {exc}]"
 
     return StreamingResponse(event_stream(), media_type="text/plain")
+
+
+class TTSRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/tts")
+async def tts(req: TTSRequest):
+    try:
+        audio = await voice.text_to_speech(req.text[:2500])
+    except Exception as exc:
+        raise HTTPException(502, f"TTS failed: {exc}")
+    return Response(audio, media_type="audio/mpeg")
+
+
+@app.post("/api/stt")
+async def stt(file: UploadFile = File(...), language: str = Form("")):
+    try:
+        text = await voice.speech_to_text(
+            await file.read(), file.filename or "audio.webm", file.content_type or "audio/webm", language or None
+        )
+    except Exception as exc:
+        raise HTTPException(502, f"STT failed: {exc}")
+    return {"text": text}
 
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")

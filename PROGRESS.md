@@ -6,38 +6,38 @@ Tracks the 14-day compressed plan against what's actually done. Updated after ev
 
 | Day | Activity | Status | Notes |
 |---|---|---|---|
-| 1 | Env setup, API credentials, config, repo | Done | Repo initialized, `.env.example`, config module, git init + first commit |
-| 2–4 | AI Tutor integration (Gemini), prompt config, streaming, level/language selection, math/code formatting | In progress | Backend + frontend built; **not yet run/verified — Python not installed on this machine, no real Gemini API key added yet** |
-| 5–6 | STT/TTS integration (ElevenLabs Scribe + TTS) | Not started | |
-| 7 | Multilingual + RTL validation (Urdu, Arabic, Persian) | Not started | RTL CSS/JS toggle already scaffolded in frontend, needs real testing |
-| 8–9 | Live AI voice agent (ElevenLabs Agent) | Not started | |
+| 1 | Env setup, API credentials, config, repo | Done | Repo, `.env.example`, config module, Python 3.12 + `.venv` installed |
+| 2–4 | AI Tutor integration (Gemini), prompt config, streaming, level/language selection, math/code formatting | Built, blocked on key | Server, config and frontend run locally. Chat calls return `403 PERMISSION_DENIED: project has been denied access` on every model — the Gemini key/project is disabled on Google's side |
+| 5–6 | STT/TTS integration (ElevenLabs Scribe + TTS) | Built, blocked on account | `/api/tts`, `/api/stt`, mic + read-aloud UI added. ElevenLabs returns `401 detected_unusual_activity` (Free Tier disabled; needs paid plan) |
+| 7 | Multilingual + RTL validation (Urdu, Arabic, Persian) | Not started | RTL CSS/JS toggle scaffolded; needs real testing once chat works |
+| 8–9 | Live AI voice agent (ElevenLabs Agent) | Not started | Needs `ELEVENLABS_AGENT_ID` |
 | 10 | Institutional branding + UI/UX pass | Not started | |
-| 11 | HTTPS deployment, security, usage/cost controls | Partially started | In-memory per-user daily cap exists (`backend/usage.py`) — needs persistent store + real deployment before this counts as done |
+| 11 | Deployment, security, usage/cost controls | Partially started | In-memory per-user daily cap (`backend/usage.py`). Deployment = local, run from this folder, for now |
 | 12 | Internal QA + academic validation | Not started | |
 | 13 | Controlled student pilot + fixes | Not started | |
 | 14 | Final UAT + Go-Live | Not started | |
 
 ## What exists right now
 
-- `backend/main.py` — FastAPI app, `/api/chat` (streaming), `/api/config`
-- `backend/llm.py` — Gemini integration, level/language-aware system prompts, streaming
+- `backend/main.py` — FastAPI app: `/api/chat` (streaming), `/api/config`, `/api/tts`, `/api/stt`
+- `backend/llm.py` — Gemini integration, level/language-aware prompts, streaming
+- `backend/voice.py` — ElevenLabs TTS (`eleven_multilingual_v2`) and STT (`scribe_v1`)
 - `backend/usage.py` — per-user daily message cap (in-memory)
-- `backend/config.py` — env-driven settings (Gemini model, ElevenLabs keys, limits, supported languages/levels)
-- `frontend/index.html`, `app.js`, `style.css` — chat UI, level/language selectors, Markdown + KaTeX rendering, RTL layout switch
-- `.env.example`, `.gitignore`, `requirements.txt`, `README.md`, `.claude/launch.json`
+- `backend/config.py` — env-driven settings
+- `frontend/` — chat UI, level/language selectors, Markdown + KaTeX, RTL switch, mic button, read-aloud toggle
+- Run: `.venv\Scripts\python.exe -m uvicorn backend.main:app --port 8000` then open http://localhost:8000
 
 ## Known blockers
 
-- **Python is not installed** on this machine — only the Windows Store execution-alias stub exists. Nothing has been run or tested yet; this is unverified code.
-- **No real `GEMINI_API_KEY`** has been added to `.env` — LLM calls have not been tested.
-- Model ID `gemini-3.8` (used per user instruction) is unverified — confirm against actual Gemini API access before relying on it.
-- ElevenLabs keys/IDs not yet configured — voice work (Days 5–6, 8–9) can't start until these exist.
+- **Gemini key denied**: the key lists models but every generate call returns 403 (project denied). Needs a working key/project. Model is set to `gemini-3.6-flash` (`gemini-3.6` does not exist; `gemini-3.6-flash` is listed for the key).
+- **ElevenLabs account blocked**: Free Tier disabled for "unusual activity", so TTS/STT are unverified until there is a paid plan or a new key. The key also lacks the `user_read` permission. `ELEVENLABS_AGENT_ID` is not set (Days 8–9).
 
 ## Decisions made
 
-- Switched LLM provider from Anthropic to Gemini 3.8 (user instruction, 2026-09-24).
-- Compressed original 25-day proposal timeline to 14 days by merging phases and running QA continuously instead of as an end block (see plan comparison in chat history) — same scope, less buffer for surprises.
-- Usage/cost control implemented as in-memory counter for now; flagged as needing a real store before pilot goes live on a shared server.
+- Switched LLM provider from Anthropic to Gemini (user instruction, 2026-09-24); now using `gemini-3.6-flash` (2026-09-25).
+- Compressed the 25-day proposal to 14 days by merging phases and running QA continuously.
+- Usage/cost control is an in-memory counter for now; needs a real store before a shared deployment.
+- Deployment stays local (same folder) for now, per user instruction.
 
 ---
-*Last updated: 2026-09-25*
+*Last updated: 2026-09-25 (later)*
