@@ -53,6 +53,11 @@ async def text_to_speech(text: str, gender: str = "female", language: str = "en"
 
 async def warm_up():
     """Open a first connection for every voice so the first real reply isn't slow."""
+    if config.TTS_PROVIDER == "elevenlabs":
+        try:
+            await _synthesize("Hello.", "female", "en")  # detects an unusable account before the first real request
+        except Exception:
+            pass
     for language in EDGE_VOICES:
         for gender in ("female", "male"):
             try:
