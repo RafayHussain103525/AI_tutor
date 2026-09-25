@@ -3,6 +3,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# "groq" (free tier, for demo) or "claude" (once credits are bought)
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").lower()
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 # Pilot restriction: only cheap models may be used. The model is fixed server-side

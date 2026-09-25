@@ -12,7 +12,7 @@ pip install -r requirements.txt
 copy .env.example .env
 ```
 
-Edit `.env` and set `ANTHROPIC_API_KEY` (and ElevenLabs keys once voice work starts).
+Set `LLM_PROVIDER=groq` (free tier, needs `GROQ_API_KEY`) or `LLM_PROVIDER=claude` (needs Anthropic credits). Edit `.env` and set `ANTHROPIC_API_KEY` (and ElevenLabs keys once voice work starts).
 
 ## Run
 

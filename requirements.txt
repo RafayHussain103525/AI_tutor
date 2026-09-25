@@ -5,3 +5,4 @@ anthropic
 pydantic
 httpx
 python-multipart
+openai

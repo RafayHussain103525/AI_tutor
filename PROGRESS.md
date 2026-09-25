@@ -7,7 +7,7 @@ Tracks the 14-day compressed plan against what's actually done. Updated after ev
 | Day | Activity | Status | Notes |
 |---|---|---|---|
 | 1 | Env setup, API credentials, config, repo | Done | Repo, `.env.example`, config module, Python 3.12 + `.venv` installed |
-| 2–4 | AI Tutor integration (Claude), prompt config, streaming, level/language selection, math/code formatting | Built, needs Anthropic key | Switched from Gemini (keys denied) to Claude. Model locked to Haiku 4.5, 600-token cap. Not yet tested with a real key |
+| 2–4 | AI Tutor integration (Claude), prompt config, streaming, level/language selection, math/code formatting | Working (free demo via Groq) | Provider switch `LLM_PROVIDER=groq|claude`. Groq `openai/gpt-oss-120b` tested OK in English, Arabic, Persian, Urdu. Claude path built (Haiku 4.5 only, 600-token cap) but Anthropic account has no credits yet — flip `LLM_PROVIDER=claude` after buying credits |
 | 5–6 | STT/TTS integration (ElevenLabs Scribe + TTS) | Built, blocked on account | `/api/tts`, `/api/stt`, mic + read-aloud UI added. ElevenLabs returns `401 detected_unusual_activity` (Free Tier disabled; needs paid plan) |
 | 7 | Multilingual + RTL validation (Urdu, Arabic, Persian) | Not started | RTL CSS/JS toggle scaffolded; needs real testing once chat works |
 | 8–9 | Live AI voice agent (ElevenLabs Agent) | Not started | Needs `ELEVENLABS_AGENT_ID` |
@@ -29,7 +29,7 @@ Tracks the 14-day compressed plan against what's actually done. Updated after ev
 
 ## Known blockers
 
-- **No `ANTHROPIC_API_KEY` yet** in `.env`. Chat can't be tested until one is added.
+- **Anthropic account has no credits** (`400 credit balance too low`). Key is saved in `.env`; Claude is unused until credits are bought. Groq free tier covers the demo meanwhile.
 - **ElevenLabs account blocked**: Free Tier disabled for "unusual activity", so TTS/STT are unverified until there is a paid plan or a new key. The key also lacks the `user_read` permission. `ELEVENLABS_AGENT_ID` is not set (Days 8–9).
 
 ## Decisions made

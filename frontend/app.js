@@ -19,11 +19,19 @@ function getOrCreateUserId() {
   return id;
 }
 
+// Some models emit \[...\] and \(...\); convert to $$...$$ and $...$ so marked
+// doesn't strip the backslashes and KaTeX auto-render picks them up.
+function normalizeMath(text) {
+  return text
+    .replace(/\\\[([\s\S]*?)\\\]/g, (_, m) => `$$${m}$$`)
+    .replace(/\\\(([\s\S]*?)\\\)/g, (_, m) => `$${m}$`);
+}
+
 function renderBubble(role, text, lang) {
   const bubble = document.createElement("div");
   bubble.className = `bubble ${role}`;
   if (RTL_LANGUAGES.has(lang)) bubble.dir = "rtl";
-  bubble.innerHTML = marked.parse(text || "");
+  bubble.innerHTML = marked.parse(normalizeMath(text || ""));
   chatEl.appendChild(bubble);
   chatEl.scrollTop = chatEl.scrollHeight;
   if (window.renderMathInElement) {
@@ -73,7 +81,7 @@ formEl.addEventListener("submit", async (e) => {
       const { done, value } = await reader.read();
       if (done) break;
       fullText += decoder.decode(value, { stream: true });
-      assistantBubble.innerHTML = marked.parse(fullText);
+      assistantBubble.innerHTML = marked.parse(normalizeMath(fullText));
       if (window.renderMathInElement) {
         renderMathInElement(assistantBubble, {
           delimiters: [
