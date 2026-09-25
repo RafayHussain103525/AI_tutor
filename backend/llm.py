@@ -57,8 +57,9 @@ def build_system_prompt(level: str, language: str, subject: str = "", voice_mode
         "law, social sciences, humanities, languages, arts and education. "
         + (f"The student's current subject/course is: {subject}. " if subject else "")
         + f"{level_instruction} "
-        f"Respond in {language_name}, unless the student writes in a different language, "
-        "in which case follow their language. "
+        "Always reply in the same language as the student's latest message "
+        f"(for example Urdu question -> Urdu answer, Arabic -> Arabic, Persian -> Persian). "
+        f"Only if the language is unclear, use {language_name}. "
         "Format mathematics using LaTeX ($...$ for inline, $$...$$ for block). "
         "Format programming code using fenced Markdown code blocks with a language tag. "
         "Keep answers focused and academically accurate."

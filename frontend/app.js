@@ -146,6 +146,18 @@ $("backdrop").addEventListener("click", closeMenu);
 
 let sentByVoice = false;
 
+// Guess the language from the script of the student's message (null = can't tell / Latin).
+function detectLanguage(text) {
+  const arabicScript = (text.match(/[؀-ۿ]/g) || []).length;
+  const latin = (text.match(/[A-Za-z]/g) || []).length;
+  if (arabicScript === 0 || arabicScript < latin) return null;
+  if (/[ٹڈڑںےہھ]/.test(text)) return "ur";
+  if (/[ژی]/.test(text) && /[پچگ]/.test(text) && !/[ىي]/.test(text)) {
+    return languageEl.value === "ur" ? "ur" : "fa";
+  }
+  return ["ur", "ar", "fa"].includes(languageEl.value) ? languageEl.value : "ar";
+}
+
 // In voice mode the model starts with <speak>short spoken answer</speak>, followed by
 // the detailed written answer. Show only the written part; read the spoken part aloud.
 function splitSpoken(full) {
@@ -169,7 +181,11 @@ formEl.addEventListener("submit", async (e) => {
   if (!message || busy) return;
 
   const level = levelEl.value;
-  const language = languageEl.value;
+  const language = detectLanguage(message) || languageEl.value;
+  if (language !== languageEl.value) {
+    languageEl.value = language;
+    applyLanguageDirection();
+  }
   // Voice in -> voice out; also when "Read answers aloud" is on.
   const voiceMode = sentByVoice || speakEl.checked;
   sentByVoice = false;
@@ -406,7 +422,8 @@ micEl.addEventListener("click", async () => {
       setStatus("Transcribing…");
       const fd = new FormData();
       fd.append("file", new Blob(chunks, { type: "audio/webm" }), "audio.webm");
-      fd.append("language", languageEl.value);
+      // No language hint: let Whisper auto-detect so Urdu/Arabic/Persian speech isn't forced into the selected language
+      fd.append("language", "");
       try {
         const res = await fetch("/api/stt", { method: "POST", body: fd });
         if (!res.ok) throw new Error(res.status);
