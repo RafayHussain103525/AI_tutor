@@ -251,10 +251,10 @@ formEl.addEventListener("submit", async (e) => {
 
 // ---------- Voice output (speaking animation) ----------
 
-let voiceProvider = "groq";
+let ttsProvider = "edge";
 fetch("/api/config")
   .then((r) => r.json())
-  .then((c) => (voiceProvider = c.voice_provider))
+  .then((c) => (ttsProvider = c.tts_provider))
   .catch(() => {});
 
 let currentAudio = null;
@@ -369,23 +369,29 @@ async function speak(text) {
       .replace(/\$\$[\s\S]*?\$\$/g, " ")
       .replace(/\\\[[\s\S]*?\\\]/g, " ")
       .replace(/[*#`$_\\]/g, "");
-    if (voiceProvider !== "elevenlabs") {
+    if (ttsProvider === "browser") {
       speakInBrowser(plain);
       return;
     }
+    setStatus("Preparing voice…");
     const res = await fetch("/api/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: plain, gender: voiceGender }),
+      body: JSON.stringify({ text: plain, gender: voiceGender, language: languageEl.value }),
     });
     if (!res.ok) throw new Error(res.status);
-    currentAudio = new Audio(URL.createObjectURL(await res.blob()));
+    const blob = await res.blob();
+    setStatus("");
+    stopSpeaking();
+    currentAudio = new Audio(URL.createObjectURL(blob));
     currentAudio.onplay = () => setSpeaking(true);
     currentAudio.onended = currentAudio.onpause = () => setSpeaking(false);
     await currentAudio.play();
   } catch (err) {
+    // Natural voice unavailable (offline / service error): fall back to the browser voice
     setSpeaking(false);
-    setStatus("Voice playback failed: " + err.message);
+    setStatus("");
+    speakInBrowser(text.replace(/[*#`$_\\]/g, ""));
   }
 }
 

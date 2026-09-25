@@ -6,3 +6,4 @@ pydantic
 httpx
 python-multipart
 openai
+edge-tts

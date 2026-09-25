@@ -48,6 +48,7 @@ def get_public_config():
         "levels": config.ACADEMIC_LEVELS,
         "max_messages_per_day": config.MAX_MESSAGES_PER_USER_PER_DAY,
         "voice_provider": config.VOICE_PROVIDER,
+        "tts_provider": config.TTS_PROVIDER,
     }
 
 
@@ -77,12 +78,13 @@ async def chat(req: ChatRequest):
 class TTSRequest(BaseModel):
     text: str
     gender: str = "female"
+    language: str = "en"
 
 
 @app.post("/api/tts")
 async def tts(req: TTSRequest):
     try:
-        audio = await voice.text_to_speech(req.text[:2500], req.gender)
+        audio = await voice.text_to_speech(req.text[:2500], req.gender, req.language)
     except Exception as exc:
         raise HTTPException(502, f"TTS failed: {exc}")
     return Response(audio, media_type="audio/mpeg")

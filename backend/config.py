@@ -24,6 +24,9 @@ if CLAUDE_MODEL not in ALLOWED_CLAUDE_MODELS:
 VOICE_PROVIDER = os.getenv("VOICE_PROVIDER", "groq").lower()
 GROQ_STT_MODEL = os.getenv("GROQ_STT_MODEL", "whisper-large-v3-turbo")
 
+# Text-to-speech: "edge" (free neural voices, human-like), "elevenlabs", or "browser" (robotic OS voices)
+TTS_PROVIDER = os.getenv("TTS_PROVIDER", "edge").lower()
+
 ELEVENLABS_API_KEY =os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "")
 # Default ElevenLabs premade voices: Sarah (female) and George (male)

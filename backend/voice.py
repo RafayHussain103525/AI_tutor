@@ -11,7 +11,30 @@ def _headers():
     return {"xi-api-key": config.ELEVENLABS_API_KEY}
 
 
-async def text_to_speech(text: str, gender: str = "female") -> bytes:
+EDGE_VOICES = {
+    "en": {"female": "en-US-AvaNeural", "male": "en-US-AndrewNeural"},
+    "ur": {"female": "ur-PK-UzmaNeural", "male": "ur-PK-AsadNeural"},
+    "ar": {"female": "ar-SA-ZariyahNeural", "male": "ar-SA-HamedNeural"},
+    "fa": {"female": "fa-IR-DilaraNeural", "male": "fa-IR-FaridNeural"},
+}
+
+
+async def _edge_tts(text: str, gender: str, language: str) -> bytes:
+    import edge_tts
+
+    voice = EDGE_VOICES.get(language, EDGE_VOICES["en"]).get(gender, EDGE_VOICES["en"]["female"])
+    audio = b""
+    async for chunk in edge_tts.Communicate(text, voice).stream():
+        if chunk["type"] == "audio":
+            audio += chunk["data"]
+    if not audio:
+        raise RuntimeError("no audio returned")
+    return audio
+
+
+async def text_to_speech(text: str, gender: str = "female", language: str = "en") -> bytes:
+    if config.TTS_PROVIDER == "edge":
+        return await _edge_tts(text, gender, language)
     voice_id = config.ELEVENLABS_VOICE_ID_MALE if gender == "male" else config.ELEVENLABS_VOICE_ID_FEMALE
     async with httpx.AsyncClient(timeout=60) as client:
         res = await client.post(
