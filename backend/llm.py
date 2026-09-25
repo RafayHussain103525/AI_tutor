@@ -37,7 +37,17 @@ LANGUAGE_NAMES = {
 }
 
 
-def build_system_prompt(level: str, language: str, subject: str = "") -> str:
+VOICE_INSTRUCTIONS = (
+    " The student is using voice, so your reply has two parts. "
+    "PART 1: begin with <speak>...</speak> containing a short, natural, conversational spoken answer "
+    "(2-4 sentences, plain words only: no LaTeX, no code, no markdown, no lists, no symbols, "
+    "write numbers and equations as words). "
+    "PART 2: after </speak>, give the detailed written answer with formulas, code, steps or tables "
+    "for the student to read on screen. Never mention these two parts."
+)
+
+
+def build_system_prompt(level: str, language: str, subject: str = "", voice_mode: bool = False) -> str:
     level_instruction = LEVEL_INSTRUCTIONS.get(level, LEVEL_INSTRUCTIONS["undergraduate"])
     language_name = LANGUAGE_NAMES.get(language, "English")
 
@@ -52,13 +62,14 @@ def build_system_prompt(level: str, language: str, subject: str = "") -> str:
         "Format mathematics using LaTeX ($...$ for inline, $$...$$ for block). "
         "Format programming code using fenced Markdown code blocks with a language tag. "
         "Keep answers focused and academically accurate."
+        + (VOICE_INSTRUCTIONS if voice_mode else "")
     )
 
 
-async def stream_tutor_reply(message: str, level: str, language: str, history: list[dict], subject: str = ""):
+async def stream_tutor_reply(message: str, level: str, language: str, history: list[dict], subject: str = "", voice_mode: bool = False):
     provider = config.LLM_PROVIDER
     client = get_client(provider)
-    system_prompt = build_system_prompt(level, language, subject)
+    system_prompt = build_system_prompt(level, language, subject, voice_mode)
 
     messages = [
         {"role": "assistant" if t.get("role") == "assistant" else "user", "content": t.get("content", "")}

@@ -30,7 +30,7 @@ ELEVENLABS_AGENT_ID = os.getenv("ELEVENLABS_AGENT_ID", "")
 
 # Pilot cost/usage controls
 MAX_MESSAGES_PER_USER_PER_DAY = int(os.getenv("MAX_MESSAGES_PER_USER_PER_DAY", "50"))
-MAX_TOKENS_PER_RESPONSE = int(os.getenv("MAX_TOKENS_PER_RESPONSE", "600"))
+MAX_TOKENS_PER_RESPONSE = int(os.getenv("MAX_TOKENS_PER_RESPONSE", "800"))
 
 SUPPORTED_LANGUAGES = ["en", "ur", "ar", "fa"]
 RTL_LANGUAGES = {"ur", "ar", "fa"}

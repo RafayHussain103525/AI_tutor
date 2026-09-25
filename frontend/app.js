@@ -144,6 +144,21 @@ $("backdrop").addEventListener("click", closeMenu);
 
 // ---------- Chat ----------
 
+let sentByVoice = false;
+
+// In voice mode the model starts with <speak>short spoken answer</speak>, followed by
+// the detailed written answer. Show only the written part; read the spoken part aloud.
+function splitSpoken(full) {
+  const m = full.match(/<speak>([\s\S]*?)(<\/speak>|$)/);
+  if (!m) return { spoken: "", text: full.trim() };
+  return { spoken: m[1].trim(), text: full.replace(m[0], "").trim() };
+}
+
+function firstSentences(text, n = 3) {
+  const plain = text.replace(/```[\s\S]*?```/g, " ");
+  return (plain.match(/[^.!?؟۔\n]+[.!?؟۔]?/g) || [plain]).slice(0, n).join(" ");
+}
+
 formEl.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (recorder) {
@@ -155,6 +170,9 @@ formEl.addEventListener("submit", async (e) => {
 
   const level = levelEl.value;
   const language = languageEl.value;
+  // Voice in -> voice out; also when "Read answers aloud" is on.
+  const voiceMode = sentByVoice || speakEl.checked;
+  sentByVoice = false;
 
   stopSpeaking();
   addMessage("user", message, language);
@@ -178,6 +196,7 @@ formEl.addEventListener("submit", async (e) => {
         level,
         language,
         subject: subjectEl.value,
+        voice_mode: voiceMode,
         history: history.slice(0, -1),
       }),
     });
@@ -195,11 +214,15 @@ formEl.addEventListener("submit", async (e) => {
       const { done, value } = await reader.read();
       if (done) break;
       fullText += decoder.decode(value, { stream: true });
-      renderInto(assistantBody, fullText);
+      const { text: shown } = splitSpoken(fullText);
+      if (shown) renderInto(assistantBody, shown);
       scrollToBottom();
     }
-    history.push({ role: "assistant", content: fullText });
-    if (speakEl.checked && fullText) speak(fullText);
+    const { spoken, text: finalText } = splitSpoken(fullText);
+    const shownText = finalText || spoken;
+    renderInto(assistantBody, shownText);
+    history.push({ role: "assistant", content: shownText });
+    if (voiceMode && shownText) speak(spoken || firstSentences(shownText));
   } catch (err) {
     assistantBody.textContent = "Network error: " + err.message;
     history.pop();
@@ -393,7 +416,10 @@ micEl.addEventListener("click", async () => {
         updateSend();
         messageEl.focus();
         setStatus("");
-        if (autoSend && messageEl.value.trim()) formEl.requestSubmit();
+        if (autoSend && messageEl.value.trim()) {
+          sentByVoice = true;
+          formEl.requestSubmit();
+        }
       } catch (err) {
         setStatus("Transcription failed: " + err.message);
       }
