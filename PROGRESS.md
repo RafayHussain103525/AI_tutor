@@ -1,4 +1,4 @@
-# AI Tutor — Progress Tracker
+# LUMA (Learning & University Mentor Assistant) — Progress Tracker
 
 Tracks the 14-day compressed plan against what's actually done. Updated after every work session.
 

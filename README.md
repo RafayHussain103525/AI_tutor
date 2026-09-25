@@ -1,4 +1,4 @@
-# AI-Powered Multilingual Tutor — Pilot
+# LUMA — Learning & University Mentor Assistant (Pilot)
 
 Day 1–2 scaffold: FastAPI backend + Claude (Haiku) streaming chat, static frontend with
 level/language selection, LaTeX/Markdown rendering, and RTL support for Urdu/Arabic/Persian.

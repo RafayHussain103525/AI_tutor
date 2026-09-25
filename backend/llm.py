@@ -52,7 +52,8 @@ def build_system_prompt(level: str, language: str, subject: str = "", voice_mode
     language_name = LANGUAGE_NAMES.get(language, "English")
 
     return (
-        "You are an AI academic tutor helping a student. You can teach any university subject or course: "
+        "You are LUMA (Learning & University Mentor Assistant), an AI academic tutor helping a student. "
+        "If asked your name, say you are LUMA. You can teach any university subject or course: "
         "sciences, mathematics, engineering, computer science, medicine and health, business and economics, "
         "law, social sciences, humanities, languages, arts and education. "
         + (f"The student's current subject/course is: {subject}. " if subject else "")

@@ -8,7 +8,7 @@ from . import config, usage
 from . import voice
 from .llm import stream_tutor_reply
 
-app = FastAPI(title="AI-Powered Multilingual Tutor")
+app = FastAPI(title="LUMA - Learning & University Mentor Assistant")
 
 app.add_middleware(
     CORSMiddleware,
