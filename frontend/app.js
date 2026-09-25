@@ -86,7 +86,7 @@ function setStatus(text) {
 // ---------- Composer ----------
 
 function updateSend() {
-  sendEl.disabled = busy || !messageEl.value.trim();
+  sendEl.disabled = busy || (!recorder && !messageEl.value.trim());
 }
 
 function autoGrow() {
@@ -146,6 +146,10 @@ $("backdrop").addEventListener("click", closeMenu);
 
 formEl.addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (recorder) {
+    finishRecording(true);
+    return;
+  }
   const message = messageEl.value.trim();
   if (!message || busy) return;
 
@@ -344,9 +348,24 @@ function startTimer() {
   }, 250);
 }
 
+let autoSend = false;
+
+function finishRecording(send) {
+  autoSend = send;
+  if (recorder && recorder.state !== "inactive") recorder.stop();
+}
+
+// Enter sends while recording (the textarea is hidden, so listen globally)
+document.addEventListener("keydown", (e) => {
+  if (recorder && e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    finishRecording(true);
+  }
+});
+
 micEl.addEventListener("click", async () => {
   if (recorder) {
-    recorder.stop();
+    finishRecording(false);
     return;
   }
   stopSpeaking();
@@ -359,6 +378,7 @@ micEl.addEventListener("click", async () => {
       stream.getTracks().forEach((t) => t.stop());
       stopMeter();
       recorder = null;
+      updateSend();
       formEl.classList.remove("recording");
       setStatus("Transcribing…");
       const fd = new FormData();
@@ -373,13 +393,16 @@ micEl.addEventListener("click", async () => {
         updateSend();
         messageEl.focus();
         setStatus("");
+        if (autoSend && messageEl.value.trim()) formEl.requestSubmit();
       } catch (err) {
         setStatus("Transcription failed: " + err.message);
       }
+      autoSend = false;
     };
     recorder.start();
     formEl.classList.add("recording");
-    setStatus("Listening… tap the square to stop");
+    updateSend();
+    setStatus("Listening… press Send or Enter to send, or tap the square to stop");
     startMeter(stream);
     startTimer();
   } catch (err) {
