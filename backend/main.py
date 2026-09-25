@@ -18,6 +18,13 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+async def _warm_voices():
+    import asyncio
+
+    asyncio.create_task(voice.warm_up())
+
+
 @app.middleware("http")
 async def no_cache(request, call_next):
     response = await call_next(request)

@@ -200,6 +200,7 @@ formEl.addEventListener("submit", async (e) => {
   const assistantBody = addMessage("assistant", "", language);
   showTyping(assistantBody);
   let fullText = "";
+  let speechStarted = false;
 
   try {
     const res = await fetch("/api/chat", {
@@ -232,12 +233,21 @@ formEl.addEventListener("submit", async (e) => {
       const { text: shown } = splitSpoken(fullText);
       if (shown) renderInto(assistantBody, shown);
       scrollToBottom();
+      // Start talking as soon as the short spoken part is complete, while the
+      // detailed written answer is still streaming.
+      if (voiceMode && !speechStarted) {
+        const m = fullText.match(/<speak>([\s\S]*?)<\/speak>/);
+        if (m && m[1].trim()) {
+          speechStarted = true;
+          speak(m[1].trim());
+        }
+      }
     }
     const { spoken, text: finalText } = splitSpoken(fullText);
     const shownText = finalText || spoken;
     renderInto(assistantBody, shownText);
     history.push({ role: "assistant", content: shownText });
-    if (voiceMode && shownText) speak(spoken || firstSentences(shownText));
+    if (voiceMode && !speechStarted && shownText) speak(spoken || firstSentences(shownText));
   } catch (err) {
     assistantBody.textContent = "Network error: " + err.message;
     history.pop();
@@ -296,30 +306,70 @@ document.querySelectorAll("#voice-gender .seg-btn").forEach((b) =>
 );
 renderGender();
 
+// Split into sentence-sized chunks (merged to >= ~70 chars) so the first one can play
+// while the rest are still being generated.
+function chunkText(text, min = 90) {
+  const sentences = text.match(/[^.!?؟۔\n]+[.!?؟۔]?/g) || [text];
+  const chunks = [];
+  let cur = "";
+  for (const s of sentences) {
+    cur += s + " ";
+    // First chunk is just the first sentence, so audio starts as early as possible
+    if (cur.trim().length >= (chunks.length ? min : 1)) {
+      chunks.push(cur.trim());
+      cur = "";
+    }
+  }
+  if (cur.trim()) chunks.push(cur.trim());
+  return chunks;
+}
+
+async function fetchSpeech(text) {
+  const res = await fetch("/api/tts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, gender: voiceGender, language: languageEl.value }),
+  });
+  if (!res.ok) throw new Error(res.status);
+  return res.blob();
+}
+
+function playBlob(blob) {
+  return new Promise((resolve) => {
+    const audio = new Audio(URL.createObjectURL(blob));
+    currentAudio = audio;
+    audio.onended = audio.onpause = audio.onerror = () => resolve();
+    audio.play().catch(() => resolve());
+  });
+}
+
 async function speak(text) {
   const token = ++speakToken;
+  const plain = text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/\$\$[\s\S]*?\$\$/g, " ")
+    .replace(/\\\[[\s\S]*?\\\]/g, " ")
+    .replace(/[*#`$_\\]/g, "")
+    .trim();
+  if (!plain) return;
+
+  // Request every chunk at once; play them in order as each one arrives.
+  const jobs = chunkText(plain).map((c) => {
+    const p = fetchSpeech(c);
+    p.catch(() => {});
+    return p;
+  });
+  setSpeaking(true);
   try {
-    const plain = text
-      .replace(/```[\s\S]*?```/g, " ")
-      .replace(/\$\$[\s\S]*?\$\$/g, " ")
-      .replace(/\\\[[\s\S]*?\\\]/g, " ")
-      .replace(/[*#`$_\\]/g, "");
-    setStatus("Preparing voice…");
-    const res = await fetch("/api/tts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: plain, gender: voiceGender, language: languageEl.value }),
-    });
-    if (!res.ok) throw new Error(res.status);
-    const blob = await res.blob();
-    if (token !== speakToken) return; // cancelled or superseded while generating
-    setStatus("");
-    if (currentAudio) currentAudio.pause();
-    currentAudio = new Audio(URL.createObjectURL(blob));
-    currentAudio.onplay = () => setSpeaking(true);
-    currentAudio.onended = currentAudio.onpause = () => setSpeaking(false);
-    await currentAudio.play();
+    for (const job of jobs) {
+      const blob = await job;
+      if (token !== speakToken) return; // cancelled or superseded
+      await playBlob(blob);
+      if (token !== speakToken) return;
+    }
+    setSpeaking(false);
   } catch (err) {
+    if (token !== speakToken) return;
     setSpeaking(false);
     setStatus("Voice is unavailable right now (" + err.message + "). The written answer is above.");
   }

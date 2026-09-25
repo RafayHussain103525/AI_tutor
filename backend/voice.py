@@ -32,7 +32,34 @@ async def _edge_tts(text: str, gender: str, language: str) -> bytes:
     return audio
 
 
+_tts_cache: dict = {}
+_TTS_CACHE_MAX = 300
+
+
 async def text_to_speech(text: str, gender: str = "female", language: str = "en") -> bytes:
+    key = (config.TTS_PROVIDER, text, gender, language)
+    if key in _tts_cache:
+        return _tts_cache[key]
+    audio = await _synthesize(text, gender, language)
+    if len(_tts_cache) >= _TTS_CACHE_MAX:
+        _tts_cache.pop(next(iter(_tts_cache)))
+    _tts_cache[key] = audio
+    return audio
+
+
+async def warm_up():
+    """Open a first connection for every voice so the first real reply isn't slow."""
+    if config.TTS_PROVIDER == "elevenlabs":
+        return
+    for language in EDGE_VOICES:
+        for gender in ("female", "male"):
+            try:
+                await _edge_tts(".", gender, language)
+            except Exception:
+                pass
+
+
+async def _synthesize(text: str, gender: str, language: str) -> bytes:
     if config.TTS_PROVIDER != "elevenlabs":
         return await _edge_tts(text, gender, language)
     voice_id = config.ELEVENLABS_VOICE_ID_MALE if gender == "male" else config.ELEVENLABS_VOICE_ID_FEMALE
