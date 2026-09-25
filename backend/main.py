@@ -76,12 +76,13 @@ async def chat(req: ChatRequest):
 
 class TTSRequest(BaseModel):
     text: str
+    gender: str = "female"
 
 
 @app.post("/api/tts")
 async def tts(req: TTSRequest):
     try:
-        audio = await voice.text_to_speech(req.text[:2500])
+        audio = await voice.text_to_speech(req.text[:2500], req.gender)
     except Exception as exc:
         raise HTTPException(502, f"TTS failed: {exc}")
     return Response(audio, media_type="audio/mpeg")

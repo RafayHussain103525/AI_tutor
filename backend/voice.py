@@ -11,10 +11,11 @@ def _headers():
     return {"xi-api-key": config.ELEVENLABS_API_KEY}
 
 
-async def text_to_speech(text: str) -> bytes:
+async def text_to_speech(text: str, gender: str = "female") -> bytes:
+    voice_id = config.ELEVENLABS_VOICE_ID_MALE if gender == "male" else config.ELEVENLABS_VOICE_ID_FEMALE
     async with httpx.AsyncClient(timeout=60) as client:
         res = await client.post(
-            f"{BASE}/text-to-speech/{config.ELEVENLABS_VOICE_ID}",
+            f"{BASE}/text-to-speech/{voice_id}",
             headers=_headers(),
             json={"text": text, "model_id": "eleven_multilingual_v2"},
         )

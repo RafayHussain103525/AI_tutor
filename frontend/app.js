@@ -292,6 +292,46 @@ function chunkText(text, max = 180) {
   return chunks;
 }
 
+// Voice gender (Female / Male), remembered between visits
+let voiceGender = "female";
+try {
+  voiceGender = localStorage.getItem("tutor_voice_gender") || "female";
+} catch (_) {}
+
+function renderGender() {
+  document.querySelectorAll("#voice-gender .seg-btn").forEach((b) => {
+    const on = b.dataset.gender === voiceGender;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-checked", on);
+  });
+}
+document.querySelectorAll("#voice-gender .seg-btn").forEach((b) =>
+  b.addEventListener("click", () => {
+    voiceGender = b.dataset.gender;
+    try {
+      localStorage.setItem("tutor_voice_gender", voiceGender);
+    } catch (_) {}
+    renderGender();
+  })
+);
+renderGender();
+
+// Browsers don't expose voice gender, so match well-known voice names.
+const FEMALE_VOICES = /zira|hazel|susan|heera|aria|jenny|samantha|female|hedda|salma|hoda|zariyah|uzma|dilara|sarah|karen|moira|tessa|fiona|victoria|google uk english female/i;
+const MALE_VOICES = /david|mark|george|ravi|guy|male|naayf|shakir|hamed|asad|farid|ryan|alvaro|daniel|alex|fred|google uk english male/i;
+
+function pickVoice(lang) {
+  const voices = speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith(lang));
+  if (!voices.length) return { voice: null, matched: false };
+  const pattern = voiceGender === "male" ? MALE_VOICES : FEMALE_VOICES;
+  const other = voiceGender === "male" ? FEMALE_VOICES : MALE_VOICES;
+  const exact = voices.find((v) => pattern.test(v.name) && !(voiceGender === "male" && /female/i.test(v.name)));
+  if (exact) return { voice: exact, matched: true };
+  // No name match: avoid a voice known to be the other gender if possible
+  const neutral = voices.find((v) => !other.test(v.name));
+  return { voice: neutral || voices[0], matched: false };
+}
+
 function speakInBrowser(plain) {
   if (!window.speechSynthesis) {
     setStatus("Read aloud is not supported in this browser.");
@@ -299,15 +339,20 @@ function speakInBrowser(plain) {
   }
   speechSynthesis.cancel();
   const lang = languageEl.value;
-  const voice = speechSynthesis.getVoices().find((v) => v.lang.toLowerCase().startsWith(lang));
+  const { voice, matched } = pickVoice(lang);
   if (!voice && lang !== "en") {
     setStatus("No installed voice for this language; add one in your OS speech settings.");
+  } else if (voice && !matched) {
+    setStatus(`No ${voiceGender} voice installed for this language, using the closest available one.`);
   }
+  // If no gendered voice exists, shift pitch so male/female still sound different
+  const pitch = matched ? 1 : voiceGender === "male" ? 0.75 : 1.15;
   const chunks = chunkText(plain);
   chunks.forEach((chunk, i) => {
     const utter = new SpeechSynthesisUtterance(chunk);
     utter.lang = SPEECH_LANGS[lang] || "en-US";
     if (voice) utter.voice = voice;
+    utter.pitch = pitch;
     if (i === 0) utter.onstart = () => setSpeaking(true);
     if (i === chunks.length - 1) {
       utter.onend = () => setSpeaking(false);
@@ -331,7 +376,7 @@ async function speak(text) {
     const res = await fetch("/api/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: plain }),
+      body: JSON.stringify({ text: plain, gender: voiceGender }),
     });
     if (!res.ok) throw new Error(res.status);
     currentAudio = new Audio(URL.createObjectURL(await res.blob()));
