@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 
 from . import config
@@ -61,7 +63,13 @@ async def warm_up():
 
 async def _synthesize(text: str, gender: str, language: str) -> bytes:
     if config.TTS_PROVIDER != "elevenlabs":
-        return await _edge_tts(text, gender, language)
+        # The free service sometimes stalls; a quick retry is usually much faster than waiting.
+        for attempt in range(3):
+            try:
+                return await asyncio.wait_for(_edge_tts(text, gender, language), timeout=4 if attempt < 2 else 15)
+            except Exception:
+                if attempt == 2:
+                    raise
     voice_id = config.ELEVENLABS_VOICE_ID_MALE if gender == "male" else config.ELEVENLABS_VOICE_ID_FEMALE
     async with httpx.AsyncClient(timeout=60) as client:
         res = await client.post(
