@@ -251,6 +251,15 @@ textarea {
 .send:active:not(:disabled) { transform: scale(.94); }
 .send:disabled { background: var(--panel-2); color: #5a6685; box-shadow: none; cursor: not-allowed; }
 
+.voice-lang {
+  width: auto; align-self: center; flex-shrink: 0;
+  background-color: var(--panel-2); border: 1px solid var(--border); border-radius: 99px;
+  padding: 6px 26px 6px 12px; font-size: .8rem; font-weight: 600; color: var(--muted);
+  background-position: right 9px center; cursor: pointer;
+}
+.voice-lang:hover, .voice-lang:focus { color: var(--text); }
+.composer.recording .voice-lang { display: none; }
+
 /* Listening state */
 .listening { display: none; flex: 1; align-items: center; gap: 14px; padding: 6px 0; color: var(--muted); font-size: .9rem; font-variant-numeric: tabular-nums; }
 .rec-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); animation: pulse-dot 1.2s infinite; flex-shrink: 0; }

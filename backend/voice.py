@@ -1,4 +1,5 @@
 import asyncio
+import re
 import time
 
 import httpx
@@ -105,22 +106,81 @@ async def _synthesize(text: str, gender: str, language: str) -> tuple[bytes, boo
     return await _edge_with_retry(text, gender, language), True
 
 
-async def speech_to_text(audio: bytes, filename: str, content_type: str, language: str | None) -> str:
-    if config.VOICE_PROVIDER == "groq":
-        if not config.GROQ_API_KEY:
-            raise RuntimeError("GROQ_API_KEY is not set. Add it to your .env file.")
-        data = {"model": config.GROQ_STT_MODEL}
-        if language:
-            data["language"] = language
-        async with httpx.AsyncClient(timeout=120) as client:
+# A short sample in the target language nudges Whisper to use the right script
+# (e.g. Urdu in Arabic script instead of Hindi in Devanagari).
+STT_PROMPTS = {
+    "ur": "یہ اردو زبان میں ایک تعلیمی سوال ہے۔",
+    "ar": "هذا سؤال تعليمي باللغة العربية.",
+    "fa": "این یک پرسش آموزشی به زبان فارسی است.",
+}
+_DEVANAGARI = re.compile(r"[ऀ-ॿ]")
+
+
+async def _groq_transcribe(audio: bytes, filename: str, content_type: str, language: str | None = None) -> dict:
+    """One Whisper call. Returns {"text", "lang" (Whisper's language name), "conf" (mean segment log-prob)}."""
+    data = {"model": config.GROQ_STT_MODEL, "temperature": "0", "response_format": "verbose_json"}
+    if language:
+        data["language"] = language
+        if language in STT_PROMPTS:
+            data["prompt"] = STT_PROMPTS[language]
+    async with httpx.AsyncClient(timeout=120) as client:
+        for attempt in range(4):
             res = await client.post(
                 f"{config.GROQ_BASE_URL}/audio/transcriptions",
                 headers={"Authorization": f"Bearer {config.GROQ_API_KEY}"},
                 data=data,
                 files={"file": (filename, audio, content_type)},
             )
+            if res.status_code == 429 and attempt < 3:
+                # Free-tier rate limit: wait as long as Groq asks (capped), then retry
+                try:
+                    wait = float(res.headers.get("retry-after", "3"))
+                except ValueError:
+                    wait = 3.0
+                await asyncio.sleep(min(max(wait, 1.0), 20.0))
+                continue
             res.raise_for_status()
-            return res.json().get("text", "")
+            body = res.json()
+            logprobs = [s["avg_logprob"] for s in body.get("segments", []) if "avg_logprob" in s]
+            return {
+                "text": (body.get("text") or "").strip(),
+                "lang": (body.get("language") or "").lower(),
+                "conf": sum(logprobs) / len(logprobs) if logprobs else -5.0,
+            }
+
+
+# Whisper reports Urdu speech as "urdu" or "hindi" (they sound the same); we always want Urdu script.
+_WHISPER_LANG = {"english": "en", "urdu": "ur", "hindi": "ur", "arabic": "ar", "persian": "fa"}
+_CONF_MARGIN = 0.10  # the other language must be clearly more confident to override the user's choice
+
+
+async def speech_to_text(audio: bytes, filename: str, content_type: str, language: str | None) -> dict:
+    """Returns {"text": ..., "language": code}.
+
+    Two Whisper passes run together: one forced to the language the user selected, and one
+    auto-detecting. The user's choice wins unless auto-detection found a *different* language and
+    is clearly more confident (i.e. the person spoke another language than the one selected).
+    """
+    if config.VOICE_PROVIDER == "groq":
+        if not config.GROQ_API_KEY:
+            raise RuntimeError("GROQ_API_KEY is not set. Add it to your .env file.")
+        hint = language if language in ("en", "ur", "ar", "fa") else None
+        hinted, auto = await asyncio.gather(
+            _groq_transcribe(audio, filename, content_type, hint),
+            _groq_transcribe(audio, filename, content_type, None),
+        )
+        auto_code = _WHISPER_LANG.get(auto["lang"])
+        chosen_code = hint
+        result = hinted
+        if hint is None:
+            chosen_code, result = auto_code or "en", auto
+        elif auto_code and auto_code != hint and auto["conf"] > hinted["conf"] + _CONF_MARGIN:
+            chosen_code = auto_code
+            # redo with the detected language forced, so we get the right script (Urdu, not Hindi)
+            result = await _groq_transcribe(audio, filename, content_type, auto_code)
+        if chosen_code == "ur" and _DEVANAGARI.search(result["text"]):
+            result = await _groq_transcribe(audio, filename, content_type, "ur")
+        return {"text": result["text"], "language": chosen_code}
 
     data = {"model_id": "scribe_v1"}
     if language:
@@ -133,4 +193,4 @@ async def speech_to_text(audio: bytes, filename: str, content_type: str, languag
             files={"file": (filename, audio, content_type)},
         )
         res.raise_for_status()
-        return res.json().get("text", "")
+        return {"text": res.json().get("text", ""), "language": language or "en"}

@@ -95,11 +95,18 @@ messageEl.addEventListener("keydown", (e) => {
   }
 });
 
+const voiceLangEl = $("voice-lang");
+
 function applyLanguageDirection() {
   const rtl = RTL_LANGUAGES.has(languageEl.value);
   messageEl.dir = rtl ? "rtl" : "ltr";
+  voiceLangEl.value = languageEl.value; // keep the mic's language picker in sync
 }
 languageEl.addEventListener("change", applyLanguageDirection);
+voiceLangEl.addEventListener("change", () => {
+  languageEl.value = voiceLangEl.value;
+  applyLanguageDirection();
+});
 
 document.querySelectorAll(".chip").forEach((chip) =>
   chip.addEventListener("click", () => {
@@ -470,12 +477,20 @@ micEl.addEventListener("click", async () => {
       setStatus("Transcribing…");
       const fd = new FormData();
       fd.append("file", new Blob(chunks, { type: "audio/webm" }), "audio.webm");
-      // No language hint: let Whisper auto-detect so Urdu/Arabic/Persian speech isn't forced into the selected language
-      fd.append("language", "");
+      // The chosen language is a hint; the server double-checks it against auto-detection
+      fd.append("language", languageEl.value);
       try {
         const res = await fetch("/api/stt", { method: "POST", body: fd });
         if (!res.ok) throw new Error(res.status);
-        const { text } = await res.json();
+        const { text, language: spokenLang } = await res.json();
+        if (!text || !text.trim()) {
+          setStatus("I couldn't hear anything. Please try again a little closer to the microphone.");
+          return;
+        }
+        if (spokenLang && spokenLang !== languageEl.value) {
+          languageEl.value = spokenLang; // the server heard a different language than selected
+          applyLanguageDirection();
+        }
         messageEl.value = (messageEl.value ? messageEl.value + " " : "") + text.trim();
         autoGrow();
         updateSend();

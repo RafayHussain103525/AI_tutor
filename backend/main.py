@@ -175,12 +175,11 @@ async def tts(req: TTSRequest, user: dict = Depends(auth.current_user)):
 @app.post("/api/stt")
 async def stt(file: UploadFile = File(...), language: str = Form(""), user: dict = Depends(auth.current_user)):
     try:
-        text = await voice.speech_to_text(
+        return await voice.speech_to_text(
             await file.read(), file.filename or "audio.webm", file.content_type or "audio/webm", language or None
         )
     except Exception as exc:
         raise HTTPException(502, f"STT failed: {exc}")
-    return {"text": text}
 
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")

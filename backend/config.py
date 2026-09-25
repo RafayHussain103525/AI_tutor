@@ -52,7 +52,7 @@ if CLAUDE_MODEL not in ALLOWED_CLAUDE_MODELS:
 
 # "groq" (free: Whisper speech-to-text) or "elevenlabs" (needs a working paid account)
 VOICE_PROVIDER = os.getenv("VOICE_PROVIDER", "groq").lower()
-GROQ_STT_MODEL = os.getenv("GROQ_STT_MODEL", "whisper-large-v3-turbo")
+GROQ_STT_MODEL = os.getenv("GROQ_STT_MODEL", "whisper-large-v3")  # full model: noticeably better for Urdu/Arabic/Persian than -turbo
 
 # Text-to-speech, always generated server-side: "edge" (free neural voices) or "elevenlabs"
 # (Allison/George; automatically falls back to the free voices if the ElevenLabs account errors)
