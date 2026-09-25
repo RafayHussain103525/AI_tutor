@@ -70,7 +70,7 @@ formEl.addEventListener("submit", async (e) => {
         message,
         level,
         language,
-        subject: document.getElementById("subject").value,
+        subject: document.getElementById("subject")?.value || "",
         history,
       }),
     });
