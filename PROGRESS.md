@@ -17,6 +17,13 @@ Tracks the 14-day compressed plan against what's actually done. Updated after ev
 | 13 | Controlled student pilot + fixes | Not started | |
 | 14 | Final UAT + Go-Live | Not started | |
 
+## Accounts & history (added 2026-09-25)
+
+- Google sign-in restricted to `@tuf.edu.pk` (server verifies the Google token, `email_verified`, and `hd`). Signed httponly session cookie, 30 days.
+- Chat history per user in SQLite (`data/luma.db`): list, open, rename, delete; grouped by date in the sidebar. Server loads the last 20 messages as model context.
+- Daily message cap and voice endpoints now use the signed-in account (previously a client-supplied ID).
+- **Not yet live**: needs `GOOGLE_CLIENT_ID` in `.env` (see README). Until then `DEV_LOGIN=1` allows domain-checked local sign-in without Google. Real Google sign-in is untested.
+
 ## What exists right now
 
 - `backend/main.py` — FastAPI app: `/api/chat` (streaming), `/api/config`, `/api/tts`, `/api/stt`
