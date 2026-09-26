@@ -743,6 +743,11 @@ updateSend();
 (async function boot() {
   try {
     appConfig = await (await fetch("/api/config")).json();
+    const list = $("subjects");
+    if (list && Array.isArray(appConfig.subjects) && appConfig.subjects.length) {
+      list.innerHTML = "";
+      appConfig.subjects.forEach((s) => list.appendChild(new Option(s, s)));
+    }
   } catch (_) {}
   try {
     const res = await fetch("/api/auth/me");

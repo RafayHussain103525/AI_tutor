@@ -5,7 +5,7 @@ from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import auth, config, db, usage, voice
+from . import auth, config, curriculum, db, usage, voice
 from .llm import TRUNCATED_MARK, stream_tutor_reply
 
 app = FastAPI(title="LUMA - Learning & University Mentor Assistant")
@@ -49,6 +49,7 @@ def get_public_config():
         "google_client_id": config.GOOGLE_CLIENT_ID,
         "allowed_email_domain": config.ALLOWED_EMAIL_DOMAIN,
         "dev_login": config.DEV_LOGIN,
+        "subjects": curriculum.subject_suggestions(),
     }
 
 
