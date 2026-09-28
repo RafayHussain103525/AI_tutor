@@ -177,19 +177,6 @@ function detectLanguage(text) {
   return ["ur", "ar", "fa"].includes(languageEl.value) ? languageEl.value : "ar";
 }
 
-// In voice mode the model starts with <speak>short spoken answer</speak>, followed by
-// the detailed written answer. Show only the written part; read the spoken part aloud.
-function splitSpoken(full) {
-  const m = full.match(/<speak>([\s\S]*?)(<\/speak>|$)/);
-  if (!m) return { spoken: "", text: full.trim() };
-  return { spoken: m[1].trim(), text: full.replace(m[0], "").trim() };
-}
-
-function firstSentences(text, n = 3) {
-  const plain = text.replace(/```[\s\S]*?```/g, " ");
-  return (plain.match(/[^.!?؟۔\n]+[.!?؟۔]?/g) || [plain]).slice(0, n).join(" ");
-}
-
 formEl.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (recorder) {
@@ -219,7 +206,7 @@ formEl.addEventListener("submit", async (e) => {
   const assistantBody = addMessage("assistant", "", language);
   showTyping(assistantBody);
   let fullText = "";
-  let speechStarted = false;
+  if (voiceMode) resetSpeechQueue();
 
   try {
     const res = await fetch("/api/chat", {
@@ -254,25 +241,19 @@ formEl.addEventListener("submit", async (e) => {
       const { done, value } = await reader.read();
       if (done) break;
       fullText += decoder.decode(value, { stream: true });
-      const { text: shown } = splitSpoken(fullText.replace(TRUNC_MARK, ""));
+      const shown = fullText.replace(TRUNC_MARK, "");
       if (shown) renderInto(assistantBody, shown);
       scrollToBottom();
-      // Start talking as soon as the short spoken part is complete, while the
-      // detailed written answer is still streaming.
-      if (voiceMode && !speechStarted) {
-        const m = fullText.match(/<speak>([\s\S]*?)<\/speak>/);
-        if (m && m[1].trim()) {
-          speechStarted = true;
-          speak(m[1].trim());
-        }
-      }
+      // Speak sentences as they finish streaming in, in parallel with the text
+      // rendering on screen — not after the whole answer is done.
+      if (voiceMode) queueSpeechFromText(shown);
     }
     const truncated = fullText.includes(TRUNC_MARK);
-    const { spoken, text: finalText } = splitSpoken(fullText.replace(TRUNC_MARK, ""));
-    const shownText = finalText || spoken;
-    renderInto(assistantBody, shownText);
+    const shownText = fullText.replace(TRUNC_MARK, "");
+    renderInto(assistantBody, shownText.trim());
     if (truncated) addContinueButton(assistantBody);
-    if (voiceMode && !speechStarted && shownText) speak(spoken || firstSentences(shownText));
+    // Not trimmed: flushSpeechQueue's offsets must line up with the untrimmed text used while streaming.
+    if (voiceMode) flushSpeechQueue(shownText);
   } catch (err) {
     assistantBody.textContent = "Network error: " + err.message;
   } finally {
@@ -295,6 +276,7 @@ function setSpeaking(on) {
 
 function stopSpeaking() {
   speakToken++;
+  speechQueue = [];
   if (currentAudio) {
     currentAudio.pause();
     currentAudio = null;
@@ -359,22 +341,129 @@ document.querySelectorAll("#voice-gender .seg-btn").forEach((b) =>
 );
 renderGender();
 
-// Split into sentence-sized chunks (merged to >= ~70 chars) so the first one can play
-// while the rest are still being generated.
-function chunkText(text, min = 90) {
-  const sentences = text.match(/[^.!?؟۔\n]+[.!?؟۔]?/g) || [text];
-  const chunks = [];
+// Read the full detailed answer aloud, sentence by sentence, as it streams in — not a
+// separate short summary, and not only after the whole answer has finished.
+//
+// queueSpeechFromText() is called on every streamed chunk with the raw text-so-far. It:
+//  1. Holds back anything inside an unclosed code fence / $$ / \[ \] block, so we never
+//     read half a formula or half a code sample (that text gets read once the block closes
+//     and is stripped out, or is skipped if it stays as a finished block).
+//  2. Converts the newly-safe raw text to plain speakable text and splits it into sentences.
+//  3. Queues each complete sentence for TTS immediately; the last, possibly-incomplete
+//     sentence is held until more text (or the end of the stream) completes it.
+let spokenRawLen = 0;
+let pendingSpeechText = "";
+let speechQueue = [];
+let playerRunning = false;
+let firstChunkSent = false;
+
+function resetSpeechQueue() {
+  speakToken++; // cancel anything from a previous turn
+  speechQueue = [];
+  spokenRawLen = 0;
+  pendingSpeechText = "";
+  firstChunkSent = false;
+}
+
+// The end of the raw text that's safe to read: cuts off before any code fence / $$ / \[..\]
+// block that hasn't closed yet, so we never speak a partial formula or code sample.
+function safeSpeakablePrefix(raw) {
+  let cut = raw.length;
+  for (const marker of ["```", "$$"]) {
+    let idx = 0, count = 0, lastOpen = -1;
+    while ((idx = raw.indexOf(marker, idx)) !== -1) {
+      count++;
+      if (count % 2 === 1) lastOpen = idx;
+      idx += marker.length;
+    }
+    if (count % 2 === 1) cut = Math.min(cut, lastOpen);
+  }
+  const opens = [];
+  let i = 0;
+  while ((i = raw.indexOf("\\[", i)) !== -1) {
+    opens.push(i);
+    i += 2;
+  }
+  const closes = (raw.match(/\\\]/g) || []).length;
+  if (opens.length > closes) cut = Math.min(cut, opens[closes]);
+
+  // Also hold back an in-progress table row / horizontal rule line until its closing
+  // newline arrives — otherwise a streaming chunk boundary can split it (e.g. only the
+  // opening "|" of a table row arrives so far) and the raw "|"/"---" leaks into speech.
+  const lastNL = raw.lastIndexOf("\n", cut - 1);
+  const lineStart = lastNL + 1;
+  if (/^\s*(\||-{3,}|\*{3,}|_{3,})/.test(raw.slice(lineStart, cut))) cut = Math.min(cut, lineStart);
+
+  return raw.slice(0, cut);
+}
+
+// Turn markdown/LaTeX into plain words for the voice to read.
+function toSpeechText(text) {
+  return text
+    .replace(/```[\s\S]*?```/g, " Here's a code example on screen. ")
+    .replace(/\$\$[\s\S]*?\$\$/g, " ")
+    .replace(/\\\[[\s\S]*?\\\]/g, " ")
+    .replace(/\|.*\|/g, " ")
+    .replace(/^\s*[-*_]{3,}\s*$/gm, "")
+    .replace(/^#+\s*/gm, "")
+    .replace(/[*_`#$\\]/g, "")
+    .replace(/\n{2,}/g, ". ");
+}
+
+function queueSpeechFromText(rawSoFar) {
+  const safe = safeSpeakablePrefix(rawSoFar);
+  if (safe.length <= spokenRawLen) return;
+  pendingSpeechText += toSpeechText(safe.slice(spokenRawLen));
+  spokenRawLen = safe.length;
+  drainCompleteSentences(false);
+}
+
+function flushSpeechQueue(finalShownText) {
+  // Pick up anything after the last safe cut point (e.g. a trailing formula/code block
+  // that never got a chance to "close" mid-stream) plus whatever sentence was pending.
+  if (finalShownText.length > spokenRawLen) {
+    pendingSpeechText += toSpeechText(finalShownText.slice(spokenRawLen));
+    spokenRawLen = finalShownText.length;
+  }
+  drainCompleteSentences(true);
+}
+
+// Merge into chunks of at least MIN_CHUNK characters before speaking — otherwise things
+// like numbered-list markers ("1.") and abbreviations ("e.g.") each end a "sentence" and
+// would fire off a separate one-word TTS request, sounding choppy and hammering the free
+// voice service. The very first chunk is exempt so speech still starts immediately.
+const MIN_CHUNK = 70;
+
+function drainCompleteSentences(isFinal) {
+  const parts = pendingSpeechText.match(/[^.!?؟۔\n]+[.!?؟۔]?\s*/g) || [];
+  if (!parts.length) {
+    if (isFinal) pendingSpeechText = "";
+    return;
+  }
+  const lastEndsClean = /[.!?؟۔]\s*$/.test(parts[parts.length - 1]);
+  const usable = isFinal || lastEndsClean ? parts : parts.slice(0, -1);
+  const leftoverPart = isFinal || lastEndsClean ? "" : parts[parts.length - 1];
+
+  const ready = [];
   let cur = "";
-  for (const s of sentences) {
-    cur += s + " ";
-    // First chunk is just the first sentence, so audio starts as early as possible
-    if (cur.trim().length >= (chunks.length ? min : 1)) {
-      chunks.push(cur.trim());
+  for (const part of usable) {
+    cur += part;
+    if (cur.trim().length >= (firstChunkSent ? MIN_CHUNK : 1)) {
+      ready.push(cur);
+      firstChunkSent = true;
       cur = "";
     }
   }
-  if (cur.trim()) chunks.push(cur.trim());
-  return chunks;
+  if (isFinal && cur.trim()) {
+    ready.push(cur);
+    cur = "";
+  }
+  pendingSpeechText = cur + leftoverPart;
+
+  for (const s of ready) {
+    const trimmed = s.trim();
+    if (trimmed) enqueueSpeech(trimmed);
+  }
 }
 
 async function fetchSpeech(text) {
@@ -396,36 +485,31 @@ function playBlob(blob) {
   });
 }
 
-async function speak(text) {
-  const token = ++speakToken;
-  const plain = text
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/\$\$[\s\S]*?\$\$/g, " ")
-    .replace(/\\\[[\s\S]*?\\\]/g, " ")
-    .replace(/[*#`$_\\]/g, "")
-    .trim();
-  if (!plain) return;
-
-  // Request every chunk at once; play them in order as each one arrives.
-  const jobs = chunkText(plain).map((c) => {
-    const p = fetchSpeech(c);
-    p.catch(() => {});
-    return p;
-  });
+function enqueueSpeech(text) {
+  const token = speakToken;
+  const job = { token, promise: fetchSpeech(text) };
+  job.promise.catch(() => {});
+  speechQueue.push(job);
   setSpeaking(true);
-  try {
-    for (const job of jobs) {
-      const blob = await job;
-      if (token !== speakToken) return; // cancelled or superseded
+  runPlayer();
+}
+
+async function runPlayer() {
+  if (playerRunning) return;
+  playerRunning = true;
+  while (speechQueue.length) {
+    const job = speechQueue.shift();
+    if (job.token !== speakToken) continue; // cancelled/superseded
+    try {
+      const blob = await job.promise;
+      if (job.token !== speakToken) continue;
       await playBlob(blob);
-      if (token !== speakToken) return;
+    } catch (err) {
+      if (job.token === speakToken) setStatus("Voice is unavailable right now (" + err.message + "). The written answer is above.");
     }
-    setSpeaking(false);
-  } catch (err) {
-    if (token !== speakToken) return;
-    setSpeaking(false);
-    setStatus("Voice is unavailable right now (" + err.message + "). The written answer is above.");
   }
+  playerRunning = false;
+  setSpeaking(false);
 }
 
 // ---------- Voice input (listening animation) ----------

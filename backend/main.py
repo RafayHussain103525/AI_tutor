@@ -1,5 +1,3 @@
-import re
-
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -92,10 +90,8 @@ def delete_conversation(cid: str, user: dict = Depends(auth.current_user)):
 # ---------- Chat ----------
 
 def _clean_reply(text: str) -> str:
-    """What gets saved: the written answer only (no spoken part, no truncation marker)."""
-    text = text.replace(TRUNCATED_MARK, "")
-    text = re.sub(r"<speak>[\s\S]*?(</speak>|$)", "", text).strip()
-    return text
+    """What gets saved: the answer without the truncation marker."""
+    return text.replace(TRUNCATED_MARK, "").strip()
 
 
 def _make_title(message: str) -> str:
