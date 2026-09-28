@@ -93,9 +93,14 @@ _eleven_blocked_until = 0.0
 
 
 async def _synthesize(text: str, gender: str, language: str) -> tuple[bytes, bool]:
-    """Returns (audio, produced_by_configured_provider)."""
+    """Returns (audio, cacheable). cacheable is False only for a transient ElevenLabs
+    account failure, so that fallback audio isn't cached and ElevenLabs is retried later."""
     global _eleven_blocked_until
-    if config.TTS_PROVIDER == "elevenlabs":
+    # ElevenLabs' configured voices (Allison/George) are English speakers; fed Urdu/Arabic/Persian
+    # script they go outside their training and can render with the wrong-sounding gender/pitch.
+    # The Microsoft neural voices are native speakers of these languages with a verified gender,
+    # so always use them for non-English regardless of TTS_PROVIDER.
+    if config.TTS_PROVIDER == "elevenlabs" and language == "en":
         if time.time() >= _eleven_blocked_until:
             try:
                 return await _elevenlabs_tts(text, gender), True

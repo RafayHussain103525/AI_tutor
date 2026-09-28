@@ -56,6 +56,7 @@ function addMessage(role, text, lang) {
   const body = document.createElement("div");
   body.className = "body";
   if (RTL_LANGUAGES.has(lang)) body.dir = "rtl";
+  if (lang) body.lang = lang;
   if (role === "user") body.textContent = text;
   else if (text) renderInto(body, text);
   row.appendChild(body);
@@ -100,6 +101,7 @@ const voiceLangEl = $("voice-lang");
 function applyLanguageDirection() {
   const rtl = RTL_LANGUAGES.has(languageEl.value);
   messageEl.dir = rtl ? "rtl" : "ltr";
+  messageEl.lang = languageEl.value;
   voiceLangEl.value = languageEl.value; // keep the mic's language picker in sync
 }
 languageEl.addEventListener("change", applyLanguageDirection);

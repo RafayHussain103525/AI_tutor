@@ -19,7 +19,7 @@ html, body { height: 100%; }
 
 body {
   margin: 0;
-  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Arabic", "Noto Nastaliq Urdu", sans-serif;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
@@ -149,6 +149,10 @@ input::placeholder, textarea::placeholder { color: #66718c; }
 .body p { margin: 0 0 .8em; }
 .body ul, .body ol { padding-inline-start: 1.4em; }
 .body[dir="rtl"] { text-align: right; }
+/* Urdu reads properly only in a Nastaliq font, at a larger size and taller line-height than Latin/Naskh text */
+.body[lang="ur"] { font-family: "Noto Nastaliq Urdu", "Segoe UI", sans-serif; font-size: 1.15em; line-height: 2.1; }
+.body[lang="ar"], .body[lang="fa"] { font-family: "Noto Naskh Arabic", "Segoe UI", sans-serif; font-size: 1.05em; line-height: 1.9; }
+#message[lang="ur"], #message[dir="rtl"] { font-family: "Noto Nastaliq Urdu", "Segoe UI", sans-serif; }
 .body pre {
   background: #0a0e18; border: 1px solid var(--border);
   padding: 14px; border-radius: 12px; overflow-x: auto; font-size: .87rem;
