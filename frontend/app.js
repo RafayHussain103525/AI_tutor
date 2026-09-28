@@ -3,8 +3,7 @@ const MATH_DELIMS = [
   { left: "$$", right: "$$", display: true },
   { left: "$", right: "$", display: false },
 ];
-const AVATAR_SVG =
-  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 8l10 5 10-5-10-5Z"/><path d="M6 10.5V16c0 1.5 2.7 3 6 3s6-1.5 6-3v-5.5"/></svg>';
+const AVATAR_SVG = '<img src="assets/tuf-logo-mark.png" alt="">';
 
 const $ = (id) => document.getElementById(id);
 const appEl = $("app");
@@ -307,6 +306,34 @@ $("stop-speaking").addEventListener("click", stopSpeaking);
 speakEl.addEventListener("change", () => {
   if (!speakEl.checked) stopSpeaking();
 });
+
+// ----- Theme (Default = TUF brand colors, Dark) -----
+
+function applyTheme(theme) {
+  if (theme === "dark") document.documentElement.dataset.theme = "dark";
+  else delete document.documentElement.dataset.theme;
+  document.querySelectorAll("#theme-toggle .seg-btn").forEach((b) => {
+    const on = b.dataset.theme === theme;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-checked", on);
+  });
+}
+
+let currentTheme = "default";
+try {
+  currentTheme = localStorage.getItem("luma_theme") || "default";
+} catch (_) {}
+applyTheme(currentTheme);
+
+document.querySelectorAll("#theme-toggle .seg-btn").forEach((b) =>
+  b.addEventListener("click", () => {
+    currentTheme = b.dataset.theme;
+    try {
+      localStorage.setItem("luma_theme", currentTheme);
+    } catch (_) {}
+    applyTheme(currentTheme);
+  })
+);
 
 // Voice gender (Female / Male), remembered between visits
 let voiceGender = "female";

@@ -67,3 +67,11 @@ To limit it to your university's actual programs, create `curriculum.json` in th
 ```
 
 With the file present, LUMA teaches only those programs/courses (plus school-level foundations), and the Subject / Course box suggests them. Without it, LUMA covers university-level academic subjects in general.
+
+## Branding & theme
+
+The app ships with The University of Faisalabad's crest (`frontend/assets/`) and two selectable themes:
+- **Default** — light theme in TUF's maroon/terracotta brand colors.
+- **Dark** — the original dark theme.
+
+The choice is a segmented control under "Settings & voice" in the sidebar, remembered per browser (`localStorage`). To swap in different institutional colors or a different crest, edit the CSS variables at the top of `frontend/style.css` (`:root` = Default, `:root[data-theme="dark"]` = Dark) and replace the files in `frontend/assets/`.
