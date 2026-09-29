@@ -1,29 +1,30 @@
+import asyncio
 from . import config, curriculum
 
 _clients = {}
-
 
 def get_client(provider: str):
     if provider in _clients:
         return _clients[provider]
     if provider == "claude":
         from anthropic import AsyncAnthropic
-
         if not config.ANTHROPIC_API_KEY:
-            raise RuntimeError("ANTHROPIC_API_KEY is not set. Add it to your .env file.")
+            raise RuntimeError("ANTHROPIC_API_KEY is not set.")
         _clients[provider] = AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
-    if provider == "gemini":
-        
+    elif provider == "gemini":
+        from google import genai
+        if not config.GEMINI_API_KEY:
+            raise RuntimeError("GEMINI_API_KEY is not set.")
+        # New SDK initialization
+        _clients[provider] = genai.Client(api_key=config.GEMINI_API_KEY)
     elif provider == "groq":
         from openai import AsyncOpenAI
-
         if not config.GROQ_API_KEY:
-            raise RuntimeError("GROQ_API_KEY is not set. Add it to your .env file.")
+            raise RuntimeError("GROQ_API_KEY is not set.")
         _clients[provider] = AsyncOpenAI(api_key=config.GROQ_API_KEY, base_url=config.GROQ_BASE_URL)
     else:
         raise RuntimeError(f"Unknown LLM_PROVIDER: {provider}")
     return _clients[provider]
-
 
 
 LEVEL_INSTRUCTIONS = {
@@ -38,7 +39,6 @@ LANGUAGE_NAMES = {
     "ar": "Arabic",
     "fa": "Persian",
 }
-
 
 SCOPE_RULES = (
     "SCOPE: you exist only to help students LEARN their university subjects. In scope: explaining concepts, "
@@ -80,24 +80,15 @@ def build_system_prompt(level: str, language: str, subject: str = "", voice_mode
         "If the answer is continued from an earlier message, resume exactly where it stopped without repeating."
     )
 
-
-# Appended when the model hit the length cap, so the UI can offer a "Continue" button.
 TRUNCATED_MARK = "[[LUMA_TRUNCATED]]"
 
-
-# Rough token estimate (no real tokenizer for every model we might use). Deliberately
-# generous — non-Latin scripts (Urdu/Arabic/Persian) and code run fewer characters per
-# token than English prose, so overestimating here is what keeps us safely under a hard
-# provider limit rather than skating right up to it.
 def _estimate_tokens(text: str) -> int:
     return len(text) // 3 + 1
 
-
 def _trim_history_to_budget(system_prompt: str, message: str, history: list[dict], budget: int) -> list[dict]:
-    """Drop the oldest turns until the estimated total fits the token budget."""
     used = _estimate_tokens(system_prompt) + _estimate_tokens(message)
     keep = []
-    for turn in reversed(history):  # newest first, so we keep the most recent context
+    for turn in reversed(history):
         cost = _estimate_tokens(turn.get("content", ""))
         if used + cost > budget:
             break
@@ -106,18 +97,25 @@ def _trim_history_to_budget(system_prompt: str, message: str, history: list[dict
     keep.reverse()
     return keep
 
-
-async def stream_tutor_reply(message: str, level: str, language: str, history: list[dict], subject: str = "", voice_mode: bool = False):
-    provider = config.LLM_PROVIDER
+async def stream_tutor_reply(
+    message: str, 
+    level: str, 
+    language: str, 
+    history: list[dict], 
+    subject: str = "", 
+    voice_mode: bool = False,
+    provider_override: str = None
+):
+    provider = provider_override if provider_override else config.LLM_PROVIDER
     client = get_client(provider)
     system_prompt = build_system_prompt(level, language, subject, voice_mode)
 
     if provider == "claude":
         history = history[-20:]
-    else:
-        # Groq's free tier hard-caps prompt + history + reserved output at GROQ_TPM_LIMIT
-        # tokens per request; trim history dynamically so long conversations degrade
-        # gracefully (older turns drop off) instead of erroring out.
+    elif provider == "gemini":
+        budget = 100000 
+        history = _trim_history_to_budget(system_prompt, message, history, budget)
+    else: 
         safety_margin = 300
         budget = config.GROQ_TPM_LIMIT - config.GROQ_MAX_TOKENS_PER_RESPONSE - safety_margin
         history = _trim_history_to_budget(system_prompt, message, history, max(budget, 500))
@@ -141,7 +139,38 @@ async def stream_tutor_reply(message: str, level: str, language: str, history: l
             final = await stream.get_final_message()
             if final.stop_reason == "max_tokens":
                 yield TRUNCATED_MARK
-    else:
+
+    elif provider == "gemini":
+        from google.genai import types
+        
+        # Format history for the new google.genai SDK
+        gemini_history = []
+        for msg in messages:
+            role = "model" if msg["role"] == "assistant" else "user"
+            gemini_history.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
+            
+        try:
+            # Use the new async streaming method
+            response = await client.aio.models.generate_content_stream(
+                model=config.GEMINI_MODEL,
+                contents=gemini_history,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    max_output_tokens=config.MAX_TOKENS_PER_RESPONSE,
+                    temperature=0.7
+                )
+            )
+            async for chunk in response:
+                if chunk.text:
+                    yield chunk.text
+                
+                # Check for truncation using the new SDK's FinishReason enum
+                if chunk.candidates and chunk.candidates[0].finish_reason == types.FinishReason.MAX_TOKENS:
+                    yield TRUNCATED_MARK
+        except Exception as exc:
+            raise exc
+
+    else: # groq
         extra = {"reasoning_effort": "low"} if "gpt-oss" in config.GROQ_MODEL else {}
         try:
             stream = await client.chat.completions.create(
@@ -152,13 +181,8 @@ async def stream_tutor_reply(message: str, level: str, language: str, history: l
                 extra_body=extra,
             )
         except Exception as exc:
-            if "413" in str(exc) or "tokens per minute" in str(exc).lower():
-                yield (
-                    "This conversation has gotten too long for the free plan to handle in one go. "
-                    "Please start a New Chat, or ask a shorter question."
-                )
-                return
-            raise
+            yield f"[Groq Error: {exc}]"
+            return
         async for chunk in stream:
             if not chunk.choices:
                 continue

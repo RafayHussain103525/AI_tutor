@@ -36,7 +36,7 @@ SECRET_KEY = _load_secret()
 # "groq" (free tier, for demo) or "claude" (once credits are bought) or GEMINI FREE API KEYS
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").lower()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY","")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL","Gemini-3.5-Flash-Lite")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL","gemini-3.5-flash-lite")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"

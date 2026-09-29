@@ -2,29 +2,25 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-
 from . import auth, config, curriculum, db, usage, voice
 from .llm import TRUNCATED_MARK, stream_tutor_reply
+from .router import router
 
 app = FastAPI(title="LUMA - Learning & University Mentor Assistant")
 app.include_router(auth.router)
 
-HISTORY_TURNS = 20  # previous messages sent to the model as context
-
+HISTORY_TURNS = 20 
 
 @app.on_event("startup")
 async def _warm_voices():
     import asyncio
-
     asyncio.create_task(voice.warm_up())
-
 
 @app.middleware("http")
 async def no_cache(request, call_next):
     response = await call_next(request)
     response.headers["Cache-Control"] = "no-cache"
     return response
-
 
 class ChatRequest(BaseModel):
     message: str
@@ -33,7 +29,6 @@ class ChatRequest(BaseModel):
     subject: str = ""
     voice_mode: bool = False
     language: str = "en"
-
 
 @app.get("/api/config")
 def get_public_config():
@@ -50,13 +45,9 @@ def get_public_config():
         "subjects": curriculum.subject_suggestions(),
     }
 
-
-# ---------- Chat history ----------
-
 @app.get("/api/conversations")
 def list_conversations(user: dict = Depends(auth.current_user)):
     return db.list_conversations(user["email"])
-
 
 @app.get("/api/conversations/{cid}")
 def get_conversation(cid: str, user: dict = Depends(auth.current_user)):
@@ -65,10 +56,8 @@ def get_conversation(cid: str, user: dict = Depends(auth.current_user)):
         raise HTTPException(404, "Conversation not found")
     return {**conv, "messages": db.get_messages(cid)}
 
-
 class RenameRequest(BaseModel):
     title: str
-
 
 @app.patch("/api/conversations/{cid}")
 def rename_conversation(cid: str, body: RenameRequest, user: dict = Depends(auth.current_user)):
@@ -79,25 +68,18 @@ def rename_conversation(cid: str, body: RenameRequest, user: dict = Depends(auth
         raise HTTPException(404, "Conversation not found")
     return {"ok": True}
 
-
 @app.delete("/api/conversations/{cid}")
 def delete_conversation(cid: str, user: dict = Depends(auth.current_user)):
     if not db.delete_conversation(user["email"], cid):
         raise HTTPException(404, "Conversation not found")
     return {"ok": True}
 
-
-# ---------- Chat ----------
-
 def _clean_reply(text: str) -> str:
-    """What gets saved: the answer without the truncation marker."""
     return text.replace(TRUNCATED_MARK, "").strip()
-
 
 def _make_title(message: str) -> str:
     title = " ".join(message.split())
     return (title[:57] + "…") if len(title) > 58 else title
-
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest, user: dict = Depends(auth.current_user)):
@@ -105,6 +87,7 @@ async def chat(req: ChatRequest, user: dict = Depends(auth.current_user)):
         raise HTTPException(400, f"Invalid level: {req.level}")
     if req.language not in config.SUPPORTED_LANGUAGES:
         raise HTTPException(400, f"Unsupported language: {req.language}")
+
     message = req.message.strip()
     if not message:
         raise HTTPException(400, "Message is empty")
@@ -112,6 +95,7 @@ async def chat(req: ChatRequest, user: dict = Depends(auth.current_user)):
         raise HTTPException(400, "Message is too long (max 4000 characters)")
 
     email = user["email"]
+
     if req.conversation_id:
         if not db.get_conversation(email, req.conversation_id):
             raise HTTPException(404, "Conversation not found")
@@ -123,23 +107,51 @@ async def chat(req: ChatRequest, user: dict = Depends(auth.current_user)):
     if not allowed:
         raise HTTPException(429, "Daily message limit reached for this pilot account.")
 
+    provider, wait_time = router.get_provider()
+
     if cid is None:
         cid = db.create_conversation(email, _make_title(message))
+
     history = db.get_messages(cid, limit=HISTORY_TURNS)
     db.add_message(cid, "user", message)
 
     async def event_stream():
+        if provider is None:
+            yield f"\n\n⏳ **System Paused:** All models are currently at their minute limit. Please wait {int(wait_time)} seconds before sending another message."
+            return
+
         collected = ""
         failed = False
+        
         try:
+            # First Attempt (Usually Gemini)
             async for piece in stream_tutor_reply(
-                message, req.level, req.language, history, req.subject.strip()[:100], req.voice_mode
+                message, req.level, req.language, history, req.subject.strip()[:100], req.voice_mode,
+                provider_override=provider
             ):
                 collected += piece
                 yield piece
+                
         except Exception as exc:
-            failed = True
-            yield f"\n\n[Error generating response: {exc}]"
+            # If the primary provider (Gemini) crashes with a 503/400, try Groq!
+            if provider == "gemini":
+                try:
+                    # Optional: let the user know it's switching
+                    # yield "\n\n*(Gemini is busy, switching to Groq...)*\n\n"
+                    
+                    async for piece in stream_tutor_reply(
+                        message, req.level, req.language, history, req.subject.strip()[:100], req.voice_mode,
+                        provider_override="groq"
+                    ):
+                        collected += piece
+                        yield piece
+                except Exception as fallback_exc:
+                    failed = True
+                    yield f"\n\n[Both models failed. Gemini: {exc} | Groq: {fallback_exc}]"
+            else:
+                failed = True
+                yield f"\n\n[Error generating response: {exc}]"
+                
         finally:
             reply = _clean_reply(collected)
             if reply and not failed:
@@ -151,14 +163,10 @@ async def chat(req: ChatRequest, user: dict = Depends(auth.current_user)):
         headers={"X-Conversation-Id": cid, "Access-Control-Expose-Headers": "X-Conversation-Id"},
     )
 
-
-# ---------- Voice ----------
-
 class TTSRequest(BaseModel):
     text: str
     gender: str = "female"
     language: str = "en"
-
 
 @app.post("/api/tts")
 async def tts(req: TTSRequest, user: dict = Depends(auth.current_user)):
@@ -168,7 +176,6 @@ async def tts(req: TTSRequest, user: dict = Depends(auth.current_user)):
         raise HTTPException(502, f"TTS failed: {exc}")
     return Response(audio, media_type="audio/mpeg")
 
-
 @app.post("/api/stt")
 async def stt(file: UploadFile = File(...), language: str = Form(""), user: dict = Depends(auth.current_user)):
     try:
@@ -177,6 +184,5 @@ async def stt(file: UploadFile = File(...), language: str = Form(""), user: dict
         )
     except Exception as exc:
         raise HTTPException(502, f"STT failed: {exc}")
-
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
