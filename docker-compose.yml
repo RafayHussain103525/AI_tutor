@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      network: host
     container_name: luma_api
     env_file:
       - .env
@@ -11,6 +12,9 @@ services:
     ports:
       - "8000:8000"
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     networks:
       - luma_network
 

@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from . import auth, config, curriculum, db, usage, voice
 from .llm import TRUNCATED_MARK, stream_tutor_reply
 from .router import router
+import asyncio
 
 app = FastAPI(title="LUMA - Learning & University Mentor Assistant")
 app.include_router(auth.router)
@@ -13,7 +14,6 @@ HISTORY_TURNS = 20
 
 @app.on_event("startup")
 async def _warm_voices():
-    import asyncio
     asyncio.create_task(voice.warm_up())
 
 @app.middleware("http")
@@ -115,47 +115,24 @@ async def chat(req: ChatRequest, user: dict = Depends(auth.current_user)):
     history = db.get_messages(cid, limit=HISTORY_TURNS)
     db.add_message(cid, "user", message)
 
+        # Inside @app.post("/api/chat")
     async def event_stream():
-        if provider is None:
-            yield f"\n\n⏳ **System Paused:** All models are currently at their minute limit. Please wait {int(wait_time)} seconds before sending another message."
-            return
-
         collected = ""
         failed = False
-        
         try:
-            # First Attempt (Usually Gemini)
             async for piece in stream_tutor_reply(
-                message, req.level, req.language, history, req.subject.strip()[:100], req.voice_mode,
-                provider_override=provider
+                message, req.level, req.language, history, req.subject.strip()[:100], req.voice_mode
             ):
                 collected += piece
                 yield piece
-                
         except Exception as exc:
-            # If the primary provider (Gemini) crashes with a 503/400, try Groq!
-            if provider == "gemini":
-                try:
-                    # Optional: let the user know it's switching
-                    # yield "\n\n*(Gemini is busy, switching to Groq...)*\n\n"
-                    
-                    async for piece in stream_tutor_reply(
-                        message, req.level, req.language, history, req.subject.strip()[:100], req.voice_mode,
-                        provider_override="groq"
-                    ):
-                        collected += piece
-                        yield piece
-                except Exception as fallback_exc:
-                    failed = True
-                    yield f"\n\n[Both models failed. Gemini: {exc} | Groq: {fallback_exc}]"
-            else:
-                failed = True
-                yield f"\n\n[Error generating response: {exc}]"
-                
+            failed = True
+            yield f"\n\n[Error generating response: {exc}]"
         finally:
             reply = _clean_reply(collected)
             if reply and not failed:
-                db.add_message(cid, "assistant", reply)
+                # FIX Issue #7: Run DB write in a separate thread to prevent asyncio blocking
+                await asyncio.to_thread(db.add_message, cid, "assistant", reply)
 
     return StreamingResponse(
         event_stream(),
