@@ -33,9 +33,10 @@ def _load_secret() -> str:
 
 SECRET_KEY = _load_secret()
 
-# "groq" (free tier, for demo) or "claude" (once credits are bought)
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").lower()
-
+# "groq" (free tier, for demo) or "claude" (once credits are bought) or GEMINI FREE API KEYS
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").lower()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY","")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL","Gemini-3.5-Flash-Lite")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
@@ -67,7 +68,13 @@ ELEVENLABS_AGENT_ID = os.getenv("ELEVENLABS_AGENT_ID", "")
 
 # Pilot cost/usage controls
 MAX_MESSAGES_PER_USER_PER_DAY = int(os.getenv("MAX_MESSAGES_PER_USER_PER_DAY", "50"))
-MAX_TOKENS_PER_RESPONSE = int(os.getenv("MAX_TOKENS_PER_RESPONSE", "2500"))
+MAX_TOKENS_PER_RESPONSE = int(os.getenv("MAX_TOKENS_PER_RESPONSE", "2500"))  # Claude (paid, generous limits)
+
+# Groq's free "on_demand" tier caps this model at 8000 tokens PER REQUEST (prompt + history +
+# reserved output all count). A lower output cap here, plus trimming old history in llm.py,
+# keeps requests under that ceiling regardless of how long a conversation gets.
+GROQ_MAX_TOKENS_PER_RESPONSE = int(os.getenv("GROQ_MAX_TOKENS_PER_RESPONSE", "1200"))
+GROQ_TPM_LIMIT = int(os.getenv("GROQ_TPM_LIMIT", "8000"))
 
 SUPPORTED_LANGUAGES = ["en", "ur", "ar", "fa"]
 RTL_LANGUAGES = {"ur", "ar", "fa"}

@@ -12,6 +12,8 @@ def get_client(provider: str):
         if not config.ANTHROPIC_API_KEY:
             raise RuntimeError("ANTHROPIC_API_KEY is not set. Add it to your .env file.")
         _clients[provider] = AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
+    if provider == "gemini":
+        
     elif provider == "groq":
         from openai import AsyncOpenAI
 
@@ -21,6 +23,7 @@ def get_client(provider: str):
     else:
         raise RuntimeError(f"Unknown LLM_PROVIDER: {provider}")
     return _clients[provider]
+
 
 
 LEVEL_INSTRUCTIONS = {
@@ -82,10 +85,42 @@ def build_system_prompt(level: str, language: str, subject: str = "", voice_mode
 TRUNCATED_MARK = "[[LUMA_TRUNCATED]]"
 
 
+# Rough token estimate (no real tokenizer for every model we might use). Deliberately
+# generous — non-Latin scripts (Urdu/Arabic/Persian) and code run fewer characters per
+# token than English prose, so overestimating here is what keeps us safely under a hard
+# provider limit rather than skating right up to it.
+def _estimate_tokens(text: str) -> int:
+    return len(text) // 3 + 1
+
+
+def _trim_history_to_budget(system_prompt: str, message: str, history: list[dict], budget: int) -> list[dict]:
+    """Drop the oldest turns until the estimated total fits the token budget."""
+    used = _estimate_tokens(system_prompt) + _estimate_tokens(message)
+    keep = []
+    for turn in reversed(history):  # newest first, so we keep the most recent context
+        cost = _estimate_tokens(turn.get("content", ""))
+        if used + cost > budget:
+            break
+        used += cost
+        keep.append(turn)
+    keep.reverse()
+    return keep
+
+
 async def stream_tutor_reply(message: str, level: str, language: str, history: list[dict], subject: str = "", voice_mode: bool = False):
     provider = config.LLM_PROVIDER
     client = get_client(provider)
     system_prompt = build_system_prompt(level, language, subject, voice_mode)
+
+    if provider == "claude":
+        history = history[-20:]
+    else:
+        # Groq's free tier hard-caps prompt + history + reserved output at GROQ_TPM_LIMIT
+        # tokens per request; trim history dynamically so long conversations degrade
+        # gracefully (older turns drop off) instead of erroring out.
+        safety_margin = 300
+        budget = config.GROQ_TPM_LIMIT - config.GROQ_MAX_TOKENS_PER_RESPONSE - safety_margin
+        history = _trim_history_to_budget(system_prompt, message, history, max(budget, 500))
 
     messages = [
         {"role": "assistant" if t.get("role") == "assistant" else "user", "content": t.get("content", "")}
@@ -108,13 +143,22 @@ async def stream_tutor_reply(message: str, level: str, language: str, history: l
                 yield TRUNCATED_MARK
     else:
         extra = {"reasoning_effort": "low"} if "gpt-oss" in config.GROQ_MODEL else {}
-        stream = await client.chat.completions.create(
-            model=config.GROQ_MODEL,
-            max_tokens=config.MAX_TOKENS_PER_RESPONSE,
-            messages=[{"role": "system", "content": system_prompt}] + messages,
-            stream=True,
-            extra_body=extra,
-        )
+        try:
+            stream = await client.chat.completions.create(
+                model=config.GROQ_MODEL,
+                max_tokens=config.GROQ_MAX_TOKENS_PER_RESPONSE,
+                messages=[{"role": "system", "content": system_prompt}] + messages,
+                stream=True,
+                extra_body=extra,
+            )
+        except Exception as exc:
+            if "413" in str(exc) or "tokens per minute" in str(exc).lower():
+                yield (
+                    "This conversation has gotten too long for the free plan to handle in one go. "
+                    "Please start a New Chat, or ask a shorter question."
+                )
+                return
+            raise
         async for chunk in stream:
             if not chunk.choices:
                 continue

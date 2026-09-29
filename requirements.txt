@@ -10,3 +10,4 @@ edge-tts
 google-auth
 requests
 itsdangerous
+google-genai
