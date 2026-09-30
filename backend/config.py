@@ -36,7 +36,7 @@ GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 
 # Fallback 2: Claude (Fixed valid model name)
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-haiku-20240307") # Fixed: claude-haiku-4-5... does not exist
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-fable-5-1") # Fixed: claude-haiku-4-5... does not exist
 
 # Voice Providers
 VOICE_PROVIDER = os.getenv("VOICE_PROVIDER", "groq").lower()

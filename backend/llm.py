@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from google import genai
 from google.genai import types
 from anthropic import AsyncAnthropic
@@ -183,18 +184,31 @@ async def _stream_claude(system_prompt: str, message: str, history: list[dict], 
 async def stream_tutor_reply(message: str, level: str, language: str, history: list[dict], subject: str = "", voice_mode: bool = False):
     system_prompt = build_system_prompt(level, language, subject, voice_mode)
     
+    # Define your priority order here
     providers = []
+    if config.ANTHROPIC_API_KEY: providers.append(("claude", config.MAX_TOKENS_PER_RESPONSE))
     if config.GEMINI_API_KEY: providers.append(("gemini", config.MAX_TOKENS_PER_RESPONSE))
     if config.GROQ_API_KEY: providers.append(("groq", config.GROQ_MAX_TOKENS_PER_RESPONSE))
-    if config.ANTHROPIC_API_KEY: providers.append(("claude", config.MAX_TOKENS_PER_RESPONSE))
     
     if not providers:
+        print("❌ [LUMA] No LLM API keys configured in environment!", flush=True)
         yield "[Error: No LLM API keys configured]"
         return
 
+    model_names = {
+        "claude": config.CLAUDE_MODEL,
+        "gemini": config.GEMINI_MODEL,
+        "groq": config.GROQ_MODEL
+    }
+
     last_exception = None
     for provider, max_tok in providers:
+        model_name = model_names.get(provider, "unknown-model")
+        
         try:
+            # 👇 GUARANTEED DOCKER LOG 👇
+            print(f"🚀 [LUMA] Streaming with: {provider.upper()} (Model: {model_name})", flush=True)
+            
             if provider == "groq":
                 budget = config.GROQ_TPM_LIMIT - max_tok - 300
                 trimmed = _trim_history_to_budget(system_prompt, message, history, max(budget, 500), language)
@@ -212,11 +226,24 @@ async def stream_tutor_reply(message: str, level: str, language: str, history: l
             
         except Exception as e:
             err_str = str(e).lower()
-            if any(k in err_str for k in ["429", "rate limit", "tokens per minute", "context length", "maximum context length", "overloaded", "503", "500"]):
+            # 👇 ADDED BILLING AND QUOTA KEYWORDS HERE 👇
+            fallback_triggers = [
+                "429", "rate limit", "tokens per minute", 
+                "context length", "maximum context length", 
+                "overloaded", "503", "500", "408", "504",
+                "credit balance", "billing", "quota", "insufficient",
+                "timed out", "timeout", "interrupted", "dropped connection", 
+                "cancellation", "canceled", "aborted", "network"
+            ]
+            
+            if any(k in err_str for k in fallback_triggers):
+                print(f"⚠️ [LUMA] {provider.upper()} hit a limit/error: {e}. Falling back...", flush=True)
                 last_exception = e
                 continue 
             else:
+                print(f"❌ [LUMA] {provider.upper()} crashed: {e}", flush=True)
                 yield f"\n\n[Error generating response: {e}]"
                 return
                 
+    print(f"❌ [LUMA] All LLM providers failed. Last error: {last_exception}", flush=True)
     yield f"\n\n[Error: All LLM providers failed or hit limits. Last error: {last_exception}]"
